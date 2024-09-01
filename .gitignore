@@ -2,6 +2,8 @@ data/
 input/
 output/
 data/
+ccccii/
+mlruns/
 
 # Editors
 .vscode/
