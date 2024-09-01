@@ -1,5 +1,11 @@
 #!/bin/bash
 
+# Directory to download the files
+download_dir="data/raw/ccccii"
+
+# Create the directory if it doesn't exist
+mkdir -p "$download_dir"
+
 # List of FTP URLs to download
 urls=(
     "ftp://download.cncb.ac.cn/covid-ct/COVID19-1.zip"
@@ -94,8 +100,8 @@ urls=(
     "ftp://download.cncb.ac.cn/covid-ct/Normal-27.zip"
 )
 
-# Loop through each URL and download it
+# Loop through each URL and download it to the specified directory
 for url in "${urls[@]}"
 do
-    wget $url
+    wget -P "$download_dir" "$url"
 done
