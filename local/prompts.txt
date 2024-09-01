@@ -1,0 +1,396 @@
+PARA DEBUGGAR:
+
+export PYTHONPATH=$PYTHONPATH:/home/paulo/workspace/doutorado/pulmo-sense
+
+====
+
+Ajuste
+
+=== CCCCII Data preparation
+
+I am creating a pytorch script to train a neural network, the neural network does ternary classification.
+
+The dataset is initialized with a root_dir, within this root_dir, there are three subdirectories: CP, NCP and Normal. 
+
+Each of this subdirectories represents an specific label, 'NCP' contains scans with Common Pneumonia, 'CP' contains scans with COVID-19 and 'Normal' contain scans that are within normal limits and do not show any pathology. 
+
+Each subdirectory contains subfolders that correspond to the patient_id, inside each patient_id folder there are scan folders where each scan folder has a number of jpg files that corresponds to slices in a scan.
+
+For example 'NCP' scans are stored like 'root_dir/NCP/9999/9999/9999.jpg', 'CP' are stored like 'root_dir/CP/9999/9999/9999.jpg' and 'root_dir/Normal/9999/9999/9999.jpg' are stored like 'root_dir/CP/9999/9999/9999.jpg'. 
+
+I need your help to make these files as proper input to the neural network I'm gonna train in Pytorch. The neural network input is the set of scans represented as a 3D matrix.
+
+Create a custom Dataset class in PyTorch. This class will handle loading of the scan folders and transforming them into the correct format for my neural network.
+
+Each scan is a sample. The dataset selects 30 central slices from the scan. 
+
+Needs to discard scans with less than 30 slices and should get just one scan from the same patient to avoid data leakage, pick the first scan with more than 30 slices then.
+
+Resized images to 512x512 pixels
+
+Normalize scan images intensities using standard normalization techniques (mean subtraction and division by the standard deviation).
+
+Trhis iss the my netwrok training script:
+
+class CNN_LSTM_Net(nn.Module):
+    def __init__(self, dropout_rate=0.5):
+        super(CNN_LSTM_Net, self).__init__()
+        self.cnn = nn.Sequential(
+            nn.Conv3d(1, 32, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.MaxPool3d(kernel_size=2, stride=2),
+            nn.Dropout(dropout_rate),  # Dropout after pooling
+            nn.Conv3d(32, 64, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.MaxPool3d(kernel_size=2, stride=2),
+            nn.Dropout(dropout_rate),  # Dropout after pooling
+            nn.Conv3d(64, 128, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.MaxPool3d(kernel_size=2, stride=2),
+            nn.Dropout(dropout_rate),  # Dropout after pooling
+        )
+        self.lstm = nn.LSTM(input_size=128, hidden_size=64, num_layers=1, batch_first=True)
+        self.dropout = nn.Dropout(dropout_rate)  # Dropout before the fully connected layer
+        self.fc = nn.Linear(64, 1)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        batch_size, channels, depth, height, width = x.size()
+        x = x.float()
+        x = self.cnn(x)
+        x = x.view(batch_size, -1, 128)
+        lstm_out, _ = self.lstm(x)
+        lstm_out = lstm_out[:, -1, :]  # Take the output of the last time step
+        lstm_out = self.dropout(lstm_out)  # Apply dropout
+        x = self.fc(lstm_out)
+        x = self.sigmoid(x)
+        return x
+
+# Training the model
+def train_model(train_dataset_loader, val_dataset_loader, num_epochs, learning_rate):
+
+    start_time = time.time()  # Start time of training
+    my_logger.info('Starting Training')
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    my_logger.info(f'Using device: {device}')
+
+    try:
+
+        model = CNN_LSTM_Net().to(device)
+        criterion = nn.BCELoss()
+        optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-5)  # Added weight_decay for L2 regularization
+
+        # Define early stopping parameters
+        early_stopping_patience = 3  # Number of epochs to wait for improvement before stopping
+        epochs_without_improvement = 0  # Counter for epochs without improvement
+
+        best_recall = 0.0
+
+        for epoch in range(num_epochs):
+            
+            my_logger.info(f'Starting epoch {epoch + 1}')
+
+            # Training phase
+            model.train()
+
+            # initialize training metrics accumulators
+            total_loss = 0
+            correct_predictions = 0
+            total_samples = 0
+
+            for i, (inputs, labels) in enumerate(train_dataset_loader):
+
+                inputs, labels = inputs.to(device), labels.to(device)
+                inputs = inputs.unsqueeze(1)  # Add channel dimension
+                
+                # Forward pass: Compute predicted y by passing x to the model
+                outputs = model(inputs)
+
+                # Compute and print loss
+                loss = criterion(outputs.squeeze(), labels)
+                
+                # Zero gradients, perform a backward pass, and update the weights.
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+                # Compute training metrics
+                total_loss += loss.item()
+                predictions = outputs.squeeze() > 0.5
+                correct_predictions += (predictions == labels).sum().item()
+                total_samples += labels.size(0)                
+
+                # Log training metrics every 10 mini-batches for monitoring
+                if i % 5 == 0:
+                    batch_accuracy = (predictions == labels).float().mean().item()
+                    my_logger.info(f'Batch [{i+1}/{len(train_dataset_loader)}], Loss: {loss.item()}, Accuracy: {batch_accuracy}')
+                    mlflow.log_metrics({'running_train_loss': loss.item(), 'running_train_accuracy': batch_accuracy}, step=epoch * len(train_dataset_loader) + i)
+
+            # Calculate and log epoch-level averages
+            train_loss = total_loss / total_samples
+            train_accuracy = correct_predictions / total_samples
+            mlflow.log_metrics({'train_loss': train_loss, 'train_accuracy': train_accuracy}, step=epoch)
+            my_logger.info(f'Epoch [{epoch+1}/{num_epochs}], Training Loss: {train_loss}, Training Accuracy: {train_accuracy}')
+
+            # Validation phase
+            model.eval()
+            with torch.no_grad():
+                val_loss = 0
+                correct = 0
+                total = 0
+                all_labels = []
+                all_probabilities = []
+                
+                for inputs, labels in val_dataset_loader:
+                    inputs, labels = inputs.to(device), labels.to(device)
+                    inputs = inputs.unsqueeze(1)  
+
+                    outputs = model(inputs)
+                    loss = criterion(outputs.squeeze(), labels)
+                    val_loss += loss.item()
+
+                    probabilities = torch.sigmoid(outputs).squeeze()  # Apply sigmoid to get probabilities
+                    predicted = probabilities > 0.5  # Convert probabilities to binary predictions
+                    total += labels.size(0)
+                    correct += (predicted == labels).sum().item()
+
+                    # Collect all labels and probabilities for metrics calculation
+                    all_labels.extend(labels.cpu().numpy())
+                    all_probabilities.extend(probabilities.cpu().numpy())  # Store probabilities
+
+                # Calculate validation metrics
+                val_loss /= len(val_dataset_loader)
+                val_accuracy = 100 * correct / total
+                recall = recall_score(all_labels, (np.array(all_probabilities) > 0.5).astype(int))
+                precision = precision_score(all_labels, (np.array(all_probabilities) > 0.5).astype(int))
+                f1 = f1_score(all_labels, (np.array(all_probabilities) > 0.5).astype(int))
+                auc = roc_auc_score(all_labels, all_probabilities)  # Use probabilities for AUC
+
+                my_logger.info(f'Validation Loss: {val_loss:.4f}, Validation Accuracy: {val_accuracy:.2f}%, '
+                            f'Recall: {recall:.2f}, Precision: {precision:.2f}, F1 Score: {f1:.2f}')
+
+                mlflow.log_metric("val_loss", val_loss, step=epoch)
+                mlflow.log_metric("val_accuracy", val_accuracy, step=epoch)
+                mlflow.log_metric("val_recall", recall, step=epoch)
+                mlflow.log_metric("val_precision", precision, step=epoch)
+                mlflow.log_metric("val_f1_score", f1, step=epoch)
+                mlflow.log_metric("val_auc", auc, step=epoch)
+
+
+                # Check for improvement
+                if recall > best_recall:
+                    best_recall = recall
+                    epochs_without_improvement = 0  # Reset counter
+                    # Save the model
+                    torch.save(model.state_dict(), f'./outputs/cnn_lstm_model.pth')
+                    my_logger.info(f'New best model saved with recall: {recall:.2f}')
+                else:
+                    epochs_without_improvement += 1  # Increment counter
+
+            # Early stopping check
+            if epochs_without_improvement >= early_stopping_patience:
+                my_logger.info('Early stopping triggered')
+                break  # Break out of the training loop
+
+        my_logger.info('Finished Training')
+        training_time = time.time() - start_time  # Calculate total training time
+        my_logger.info(f'Training completed in {training_time:.2f} seconds')
+
+======
+
+Besides MosMedDataset, CovidCtMd and Luna16 I have a new dataset named ccccii. Add ccccii to this dataset file, ccccii is a dataset initialized with a root_dir, within this root_dir, there are three subdirectories: CP, NCP and Normal. Each of this subdirectories represents an specific label, 'NCP' contains studies with Common Pneumonia, 'CP' contains studies with COVID-19 and 'Normal' contain studies that are within normal limits and do not show any pathology. Each directory contains subfolders that correspond to the patient_id, inside each patient_id folder there are scan folders where each scan folder has a number of jpg files that corresponds to slices in a study. 'NCP' are stored like 'root_dir/NCP/9999/9999/9999.jpg', 'CP' are stored like 'root_dir/CP/9999/9999/9999.jpg' and 'root_dir/Normal/9999/9999/9999.jpg' are stored like 'root_dir/CP/9999/9999/9999.jpg'. The image should be normalized. The dataset selects 30 central slices from the image stack. The image is then resized to 512x512 pixels. Needs to discard scans with less than 30 slices and should get just one scan from the same patient to avoid data leakage, pick the first scan with more than 30 slices then.
+
+
+======
+
+I have three datasets:
+
+MosMedDataset
+CovidCtMd
+Luna16
+
+MosMedDataset is a dataset initialized with a root_dir, within this root_dir, there are two subdirectories: images and covid_labels. The images directory contains the medical images, and the covid_labels directory contains JSON files with labels (true or false) indicating the presence of COVID-19. Each image is loaded using NumPy (root_dir/images/study_9999/image.npy), and the label(root_dir/covid_labels/study_9999/covid_label.json) and spacing information (root_dir/images/study_9999/spacing.json) are loaded as JSON. Study_9999 represents the different studies in the dataset that can vary from Study_0000 to Study_9999. The image is then resampled based on the spacing information to ensure uniformity in voxel size across the dataset. The image is normalized. The dataset focuses on a specific region of interest by selecting 30 central slices from the image stack. The image is then resized to 512x512 pixels.
+
+I'm creating a pytorch dataset that will combine MosMedDataset and two more datasets, named CovidCtMd and Luna16. Create a pytorch dataset that combines the three datasets in just one. The combined dataset will have just two classes: normal and abnormal. I'll share the CovidCtMd and Luna16 descriptions and the current MosMedDataset implementation as a reference.
+
+CovidCtMd is a dataset initialized with a root_dir, within this root_dir, there are three subdirectories: 'Cap Cases', 'COVID-19 Cases' and 'Normal Cases'. Each of this directories represents an specific label, 'Cap Cases' contains studies with Common Pneumonia, 'COVID-19 Cases' contains studies with COVID-19 and 'Normal Cases' contain studies that are within normal limits and do not show any pathology. Each image is a set of dicom files inside its respective directory, each dicom file corresponds to a slice. 'Cap Cases' are stored like 'root_dir/Cap Cases/cap999/IM9999.dcm', 'COVID-19 Cases' are stored like 'root_dir/COVID-19 Cases/P999/IM9999.dcm' and 'Normal Cases' are stored like 'root_dir/Normal Cases/normal001/IM9999.dcm'. The image should be normalized. The dataset selects 30 central slices from the image stack. The image is then resized to 512x512 pixels.
+
+Luna16 is a dataset initialized with a root_dir, within this root_dir, there are ten subdirectories with the following format subset n, where n goes from 0 to 9. Each of this directory has pairs of mhd and a correspondent raw image file, each mhd is a specific study, all studies contains lung nodules.The image should be normalized. The dataset selects 30 central slices from the image stack. The image is then resized to 512x512 pixels.
+
+Current MosMedDataset implementation:
+
+import os
+import json
+import numpy as np
+import torch
+from torch.utils.data import Dataset
+from scipy.ndimage import zoom
+
+# Constants for spacing
+NEW_SPACING_XY = 0.6
+NEW_SPACING_Z = 8
+
+def normalize(image):
+    return (image - image.mean()) / image.std()
+
+def resample(image, old_spacing, new_spacing=[NEW_SPACING_XY, NEW_SPACING_XY, NEW_SPACING_Z]):
+    resize_factor = old_spacing / new_spacing
+    new_shape = image.shape * resize_factor
+    rounded_new_shape = np.round(new_shape)
+    resize_factor_actual = rounded_new_shape / image.shape
+    new_spacing = old_spacing / resize_factor_actual
+    resampled_image = zoom(image, resize_factor_actual, mode='nearest')
+    return resampled_image
+
+def center_crop(image, new_shape):
+    center = np.array(image.shape) // 2
+    start = center - new_shape // 2
+    end = start + new_shape
+    slices = tuple(slice(start[i], end[i]) for i in range(len(new_shape)))
+    return image[slices]
+
+class MosMedDataset(Dataset):
+    def __init__(self, root_dir):
+        self.root_dir = root_dir
+        self.image_dir = os.path.join(root_dir, 'images')
+        self.label_dir = os.path.join(root_dir, 'covid_labels')
+        self.samples = os.listdir(self.image_dir)
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, idx):
+        image_path = os.path.join(self.image_dir, self.samples[idx], 'image.npy')
+        label_path = os.path.join(self.label_dir, self.samples[idx], 'covid_label.json')
+        spacing_path = os.path.join(self.image_dir, self.samples[idx], 'spacing.json')
+
+        image = np.load(image_path)
+        with open(label_path, 'r') as f:
+            label = json.load(f)
+        with open(spacing_path, 'r') as f:
+            spacing = json.load(f)
+
+        image = resample(image, np.array(spacing))
+        image = normalize(image)
+        
+        # Select 30 central slices
+        z_center = image.shape[0] // 2
+        z_start = z_center - 15
+        z_end = z_center + 15
+        image = image[z_start:z_end, :, :]
+        
+        # Resize to 512x512
+        image_resized = np.zeros((30, 512, 512))
+        for i in range(30):
+            image_resized[i] = zoom(image[i], (512/image.shape[1], 512/image.shape[2]), mode='nearest')
+        
+        return torch.from_numpy(image_resized), torch.tensor(label, dtype=torch.float32)
+
+# Example usage
+# dataset = MosMedDataset(root_dir='path_to_data')
+# dataloader = DataLoader(dataset, batch_size=4, shuffle=True)
+
+
+=== Dataset Analysis
+
+I have four datasets:
+
+MosMedDataset
+CovidCtMd
+Luna16
+Osic
+
+MosMedDataset is a dataset initialized with a root_dir, within this root_dir, there are two subdirectories: images and covid_labels. The images directory contains the medical images, and the covid_labels directory contains JSON files with labels (true or false) indicating the presence of COVID-19. Each image is loaded using NumPy (root_dir/images/study_9999/image.npy), and the label(root_dir/covid_labels/study_9999/covid_label.json) and spacing information (root_dir/images/study_9999/spacing.json) are loaded as JSON. Study_9999 represents the different studies in the dataset that can vary from Study_0000 to Study_9999.
+
+CovidCtMd is a dataset initialized with a root_dir, within this root_dir, there are three subdirectories: 'Cap Cases', 'COVID-19 Cases' and 'Normal Cases'. Each of this directories represents an specific label, 'Cap Cases' contains studies with Common Pneumonia, 'COVID-19 Cases' contains studies with COVID-19 and 'Normal Cases' contain studies that are within normal limits and do not show any pathology. Each image is a set of dicom files inside its respective directory, each dicom file corresponds to a slice. 'Cap Cases' are stored like 'root_dir/Cap Cases/cap999/IM9999.dcm', 'COVID-19 Cases' are stored like 'root_dir/COVID-19 Cases/P999/IM9999.dcm' and 'Normal Cases' are stored like 'root_dir/Normal Cases/normal001/IM9999.dcm'.
+
+Luna16 is a dataset initialized with a root_dir, within this root_dir, there are ten subdirectories with the following format subset n, where n goes from 0 to 9. Each of this directory has pairs of mhd and a correspondent raw image file, each mhd is a specific study, all studies contains lung nodules.
+
+Osic is a dataset initialized within its root_dir, within this root_dir, there are various directories with the following format ID99999999999999999999999 where 9 can be any number, each folder corresponds to a study of a person with fibrosis, each folder contains a number of dicom files(ex:1.dcm, 2.dcm), each dicom file corresponds to a slice from that study. 
+
+Create a python script that summarize for each dataset the number os studies by class and the average number of slices per study per dataset.
+
+=== Other
+
+
+Osic is a dataset initialized within its root_dir, within this root_dir, there are various directories with the following format ID99999999999999999999999 where 9 can be any number, each folder corresponds to a study of a person with fibrosis, each folder contains a number of dicom files(ex:1.dcm, 2.dcm), each dicom file corresponds to a slice from that study. The image should be normalized. The dataset selects 30 central slices from the image stack for each study (sample). The image is then resized to 512x512 pixels.
+
+
+=== Mosmed Data preparation
+
+I am creating a pytorch script to train a neural network, the neural network to do binary classification, the network input is a 3D matrix.
+
+The training dataset is composed of npy files, each npy file corresponds to a different training sample.
+
+The training dataset is composed of files stored in a folder called 'images' which content is like this:
+
+images/study_0001/image.npy
+images/study_0002/image.npy
+images/study_000n/image.npy
+
+Each o the npy files in the training dataset is a CT scan that has a different pixel spacing, the pixel spacing definition is defined in a spacing.json file stored in the same folder as the npy. 
+
+Each spacing.json is a json file containing a list like this one [x, y, z] where the first two values x, y represent the pixel spacing in the horizontal and vertical dimensions of each slice, respectively. The third value, z, refers to the slice thickness, which is the spacing between each slice of the CT scan.
+
+Labels are in a folder called 'labels' which content is like this:
+
+labels/study_0001/label.json
+labels/study_0002/label.json
+labels/study_000n/label.json
+
+Each label.json contents is true or false
+
+I need your help to make these files as proper input to the neural network I'm gonna train in Pytorch.
+
+Create a custom Dataset class in PyTorch. This class will handle loading of the .npy files and transforming them into the correct format for my neural network.
+
+Create a Data Loader to handle batching, shuffling, and multiprocessing.
+
+Each sample is a CT study, 
+
+Define Transformation to resample the scans so that I have uniform pixel spacing across all samples. The standard pixel spacing to which all images will be resampled is 0.6 and the slide thickness is 8.
+
+In addition to resampling, normalize the image intensities using standard normalization techniques (mean subtraction and division by the standard deviation).
+
+=== Train CCN_LSTM
+
+Create a pytorch script to train a neural network, the neural network to do binary classification.
+The network input is a 3D matrix and its respective class.
+The input will be provided by MosMedDataset Dataset.
+The output will be probability or being the positive class. 
+The network architecture should have two parts, the first a CNN and the Second a LSTM. 
+
+class MosMedDataset(Dataset):
+    def __init__(self, root_dir):
+        self.root_dir = root_dir
+        self.image_dir = os.path.join(root_dir, 'images')
+        self.label_dir = os.path.join(root_dir, 'covid_labels')
+        self.samples = os.listdir(self.image_dir)
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, idx):
+        image_path = os.path.join(self.image_dir, self.samples[idx], 'image.npy')
+        label_path = os.path.join(self.label_dir, self.samples[idx], 'covid_label.json')
+        spacing_path = os.path.join(self.image_dir, self.samples[idx], 'spacing.json')
+
+        image = np.load(image_path)
+        with open(label_path, 'r') as f:
+            label = json.load(f)
+        with open(spacing_path, 'r') as f:
+            spacing = json.load(f)
+
+        image = resample(image, np.array(spacing))
+        image = normalize(image)
+
+        return torch.from_numpy(image), torch.tensor(label, dtype=torch.float32)
+
+== data analysis
+
+I have a couple folders: study_0001, study_0002, study_0003. Each folder has a image.npy file which corresponds to a 3D structure that is a computed tomography scan.
+
+I want you to create a program that reads the image.npy and give me all the statistics of that file, like width, length and depth, and also data on voxel statistics, like median, average, etc.
+
+The program should also have a parameter where I inform the depth that correspond to a specific slice and print that slice.

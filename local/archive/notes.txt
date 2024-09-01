@@ -1,0 +1,4 @@
+PARA DEBUGGAR:
+
+export PYTHONPATH=$PYTHONPATH:/home/paulo/workspace/doutorado/pulmo-sense
+
