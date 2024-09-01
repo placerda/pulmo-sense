@@ -103,5 +103,28 @@ urls=(
 # Loop through each URL and download it to the specified directory
 for url in "${urls[@]}"
 do
-    wget -P "$download_dir" "$url"
+    # Extract the filename from the URL
+    filename=$(basename "$url")
+
+    # Get the local file path
+    local_file="$download_dir/$filename"
+
+    # Check if the file already exists
+    if [ -f "$local_file" ]; then
+        # Get the remote file size
+        remote_size=$(curl -sI "$url" | grep -i Content-Length | awk '{print $2}' | tr -d '\r')
+
+        # Get the local file size
+        local_size=$(stat -c%s "$local_file")
+
+        # Compare the file sizes
+        if [ "$local_size" -eq "$remote_size" ]; then
+            echo "File $filename already exists and is the same size as the remote file, skipping download."
+        else
+            echo "File $filename exists but is different in size, re-downloading."
+            wget -P "$download_dir" "$url"
+        fi
+    else
+        wget -P "$download_dir" "$url"
+    fi
 done
