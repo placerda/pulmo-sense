@@ -48,7 +48,6 @@ The "Results" section provides a summary of the outcomes from the experiments co
 ## Running Tests
 
 Run all unit tests from the project's root directory with Python's `unittest` module using the command: `python -m unittest discover -s tests -v`.
-```
 
 ## Contributing
 
