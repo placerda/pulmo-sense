@@ -89,7 +89,7 @@ def train_model(train_dataset_loader, val_dataset_loader, num_epochs, learning_r
             total_samples = 0
 
             for i, (inputs, labels) in enumerate(train_dataset_loader):
-                my_logger.info(f'Batch {i} shape: {inputs.size()}')
+                # my_logger.info(f'Batch {i} shape: {inputs.size()}')
                 inputs, labels = inputs.to(device), labels.to(device)
                 # Remove the following line as the channel dimension is already present in the dataset
                 # inputs = inputs.unsqueeze(1)  # This line is causing the extra dimension

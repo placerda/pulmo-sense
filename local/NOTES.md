@@ -28,6 +28,35 @@ Train / Validation
 | CCCCIIDataset    | Train: COVID-19 611 Common 698 Normal 659 - Val: COVID-19 153 Common 174 Normal 165 | Train: COVID-19 31.06% Common 35.45% Normal 33.50% - Val: COVID-19 31.06% Common 35.45% Normal 33.50% |
 | CombinedDataset  | Train: Normal 923 Abnormal 2884 - Val: Normal 231 Abnormal 721                      | Train: Normal 24.25% Abnormal 75.75% - Val: Normal 24.25% Abnormal 75.75%                             |
 
+
+
+
+
+
+
+
+
+
+Anotacoes
+
+# Suponha que você já tenha um modelo treinado e carregado
+model = CNN_Net(num_classes=3, input_height=512, input_width=512)
+model.load_state_dict(torch.load('caminho/para/seu/modelo.pth'))
+model.eval()
+
+# Suponha que `input_tensor` seja o tensor de entrada com as dimensões corretas
+with torch.no_grad():
+    embedding_vector = model(input_tensor, return_embedding=True)
+
+
+
+
+
+
+
+
+
+
 **Julho - Setembro** ⏳
 
 Realizar Experimentos comparando diferentes arquiteturas:

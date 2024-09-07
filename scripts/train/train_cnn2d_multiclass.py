@@ -1,5 +1,6 @@
 import argparse
 import os
+import random
 import time
 import traceback
 
@@ -16,7 +17,7 @@ from sklearn.model_selection import StratifiedGroupKFold
 from pathlib import Path
 
 from datasets.ccccii_dataset import CCCCIIDataset2D
-from utils.download import download_from_blob
+from utils.download import download_from_blob, download_from_blob_balanced
 from utils.log_config import get_custom_logger
 
 my_logger = get_custom_logger('train_cnn2d_multiclass')
@@ -40,15 +41,19 @@ class CNN_Net(nn.Module):
         )
         self.fc = nn.Linear(128 * (input_height // 8) * (input_width // 8), num_classes)
         
-    def forward(self, x):
+    def forward(self, x, return_embedding=False):
         if len(x.size()) != 4:
             raise ValueError(f"Expected 4D input (batch_size, channels, height, width), got {x.size()}")
 
         batch_size, channels, height, width = x.size()
         x = x.float()
-        x = self.cnn(x)
-        x = x.view(batch_size, -1)
-        x = self.fc(x)
+        embedding = self.cnn(x)
+        flattened = embedding.view(batch_size, -1)
+        
+        if return_embedding:
+            return flattened  # Retorna apenas o embedding
+
+        x = self.fc(flattened)
         return x
 
 
@@ -82,7 +87,7 @@ def train_model(train_dataset_loader, val_dataset_loader, num_epochs, learning_r
             total_samples = 0
 
             for i, (inputs, _, labels) in enumerate(train_dataset_loader):
-                my_logger.info(f'Batch {i} shape: {inputs.size()}')
+                # my_logger.info(f'Batch {i} shape: {inputs.size()}')
                 inputs, labels = inputs.to(device), labels.to(device)
                 outputs = model(inputs)
 
@@ -107,6 +112,7 @@ def train_model(train_dataset_loader, val_dataset_loader, num_epochs, learning_r
             my_logger.info(f'Epoch [{epoch+1}/{num_epochs}], Training Loss: {train_loss}, Training Accuracy: {train_accuracy}')
 
             # Validation phase
+            my_logger.info(f'Staring validation phase for epoch {epoch + 1}')            
             model.eval()
             with torch.no_grad():
                 val_loss = 0
@@ -126,6 +132,10 @@ def train_model(train_dataset_loader, val_dataset_loader, num_epochs, learning_r
                     total += labels.size(0)
                     correct += (predicted == labels).sum().item()
 
+                    my_logger.info(f"Labels (first 5): {labels.cpu().numpy()[:5]}")
+                    my_logger.info(f"Predictions (first 5): {predicted.cpu().numpy()[:5]}")
+                    my_logger.info(f"Probabilities (first 5): {probabilities.cpu().numpy()[:5]}")
+
                     all_labels.extend(labels.cpu().numpy())
                     all_probabilities.extend(probabilities.cpu().numpy())
 
@@ -133,37 +143,42 @@ def train_model(train_dataset_loader, val_dataset_loader, num_epochs, learning_r
                 val_accuracy = 100 * correct / total
 
                 # Adjust metrics calculations to handle missing classes
-                recall = recall_score(all_labels, np.array(all_probabilities).argmax(axis=1), average='macro', zero_division=0)
-                precision = precision_score(all_labels, np.array(all_probabilities).argmax(axis=1), average='macro', zero_division=0)
+                val_recall = recall_score(all_labels, np.array(all_probabilities).argmax(axis=1), average='macro', zero_division=0)
+                val_precision = precision_score(all_labels, np.array(all_probabilities).argmax(axis=1), average='macro', zero_division=0)
                 f1 = f1_score(all_labels, np.array(all_probabilities).argmax(axis=1), average='macro', zero_division=0)
                 
                 # Handle missing classes in AUC calculation
                 try:
                     auc = roc_auc_score(all_labels, all_probabilities, multi_class='ovr')
-                except ValueError as e:
+                except ValueError as e: # Number of classes in y_true not equal to the number of columns in 'y_score'
                     my_logger.error(f'Error calculating AUC: {e}')
                     auc = 0  # or handle as appropriate
 
                 my_logger.info(f'Validation Loss: {val_loss:.4f}, Validation Accuracy: {val_accuracy:.2f}%, '
-                               f'Recall: {recall:.2f}, Precision: {precision:.2f}, F1 Score: {f1:.2f}, AUC: {auc:.2f}')
+                               f'Recall: {val_recall:.2f}, Precision: {val_precision:.2f}, F1 Score: {f1:.2f}, AUC: {auc:.2f}')
 
                 mlflow.log_metric("val_loss", val_loss, step=epoch)
                 mlflow.log_metric("val_accuracy", val_accuracy, step=epoch)
-                mlflow.log_metric("val_recall", recall, step=epoch)
-                mlflow.log_metric("val_precision", precision, step=epoch)
+                mlflow.log_metric("val_recall", val_recall, step=epoch)
+                mlflow.log_metric("val_precision", val_precision, step=epoch)
                 mlflow.log_metric("val_f1_score", f1, step=epoch)
                 mlflow.log_metric("val_auc", auc, step=epoch)
 
-                if recall > best_recall:
-                    best_recall = recall
+                if val_recall > best_recall:
+                    best_recall = val_recall
                     epochs_without_improvement = 0
-                    torch.save(model.state_dict(), f'./outputs/cnn_lstm_model.pth')
-                    my_logger.info(f'New best model saved with recall: {recall:.2f}')
+                    output_dir = './outputs'
+                    os.makedirs(output_dir, exist_ok=True)
+
+                    file_name = f'cnn_multiclass_lung_disease_{total_samples}samples_epoch{epoch + 1}_lr{learning_rate:.5f}.pth'
+                    
+                    torch.save(model.state_dict(), f'{output_dir}/{file_name}')
+                    my_logger.info(f'New best model saved with recall: {val_recall:.2f}')
                 else:
                     epochs_without_improvement += 1
 
             if epochs_without_improvement >= early_stopping_patience:
-                my_logger.info('Early stopping triggered')
+                my_logger.info(f'Early stopping triggered. Last Recall: {val_recall}, Last Precision: {val_precision}, Last Accuracy: {val_accuracy}')
                 break
 
         my_logger.info('Finished Training')
@@ -177,7 +192,6 @@ def train_model(train_dataset_loader, val_dataset_loader, num_epochs, learning_r
 
 def main():
     my_logger.info(f"Torch version: {torch.__version__}")    
-
     # get command-line arguments
     my_logger.info("Parsing command-line arguments")
     parser = argparse.ArgumentParser(description='Train a model')
@@ -188,6 +202,8 @@ def main():
     parser.add_argument("--i", type=int, help="current fold index (0-based)")
     parser.add_argument('--dataset', type=str, help='Dataset name')
     parser.add_argument('--run_cloud', action='store_true', help='Flag to indicate whether to run in cloud mode')
+    parser.add_argument('--max_samples', type=int, default=None, help='Maximum number of samples to use')
+    parser.add_argument('--max_patients', type=int, default=None, help='Maximum number of patients to download')
 
     args = parser.parse_args()
     my_logger.info(f"Arguments parsed: {args}")
@@ -208,16 +224,30 @@ def main():
         storage_account_key = os.getenv('AZURE_STORAGE_KEY')
         container_name = os.getenv('BLOB_CONTAINER')
         my_logger.info(f"Downloading dataset from blob: storage_account={storage_account}, container_name={container_name}")
-        download_from_blob(storage_account, storage_account_key, container_name, dataset_folder)
+        
+        if args.max_patients:
+            my_logger.info(f"Using download_from_blob_balanced with max_patients={args.max_patients}")
+            download_from_blob_balanced(storage_account, storage_account_key, container_name, dataset_folder, args.max_patients)
+        else:
+            download_from_blob(storage_account, storage_account_key, container_name, dataset_folder)
 
     my_logger.info("Loading dataset")
-    my_dataset = CCCCIIDataset2D(dataset_folder)
-    my_logger.info("Dataset loaded")
+    my_dataset = CCCCIIDataset2D(dataset_folder, max_samples=args.max_samples)
+    my_logger.info(f"Dataset loaded with a maximum of {args.max_samples} samples")
 
     # Group by patient
     my_logger.info("Extracting patient IDs and labels")
     patient_ids = [sample[1] for sample in my_dataset]
     labels = [sample[2] for sample in my_dataset]  # Extract labels
+
+    # Shuffle patients
+    random.seed(42)
+    combined = list(zip(patient_ids, labels))
+    random.shuffle(combined)
+    patient_ids, labels = zip(*combined)
+    patient_ids = list(patient_ids)
+    labels = list(labels)
+
 
     if args.i < 0 or args.i >= args.k:
         my_logger.error(f"Invalid fold index 'i': {args.i}. It must be between 0 and {args.k - 1}.")
@@ -249,7 +279,6 @@ def main():
 
     mlflow.end_run()
     my_logger.info("MLflow run ended")
-
 
 if __name__ == "__main__":
     main()
