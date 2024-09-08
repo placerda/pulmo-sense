@@ -5,6 +5,7 @@ outputs/
 data/
 ccccii/
 mlruns/
+logs/
 
 # Editors
 .vscode/
