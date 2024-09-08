@@ -17,7 +17,7 @@ from sklearn.model_selection import StratifiedGroupKFold
 from pathlib import Path
 
 from datasets.ccccii_dataset import CCCCIIDataset2D
-from utils.download import download_from_blob, download_from_blob_balanced
+from utils.download import download_from_blob
 from utils.log_config import get_custom_logger
 
 my_logger = get_custom_logger('train_cnn2d_multiclass')
@@ -101,9 +101,9 @@ def train_model(train_dataset_loader, val_dataset_loader, num_epochs, learning_r
                 correct_predictions += (predictions == labels).sum().item()
                 total_samples += labels.size(0)
 
-                if i % 5 == 0:
+                if i % 100 == 0:
                     batch_accuracy = (predictions == labels).float().mean().item()
-                    my_logger.info(f'Batch [{i+1}/{len(train_dataset_loader)}], Loss: {loss.item()}, Accuracy: {batch_accuracy}')
+                    my_logger.info(f'Train batch [{i+1}/{len(train_dataset_loader)}], Loss: {loss.item()}, Accuracy: {batch_accuracy}')
                     mlflow.log_metrics({'running_train_loss': loss.item(), 'running_train_accuracy': batch_accuracy}, step=epoch * len(train_dataset_loader) + i)
 
             train_loss = total_loss / total_samples
@@ -112,7 +112,7 @@ def train_model(train_dataset_loader, val_dataset_loader, num_epochs, learning_r
             my_logger.info(f'Epoch [{epoch+1}/{num_epochs}], Training Loss: {train_loss}, Training Accuracy: {train_accuracy}')
 
             # Validation phase
-            my_logger.info(f'Staring validation phase for epoch {epoch + 1}')            
+            my_logger.info(f'Starting validation phase for epoch {epoch + 1}')            
             model.eval()
             with torch.no_grad():
                 val_loss = 0
@@ -121,7 +121,7 @@ def train_model(train_dataset_loader, val_dataset_loader, num_epochs, learning_r
                 all_labels = []
                 all_probabilities = []
                 
-                for inputs, _, labels in val_dataset_loader:
+                for j, (inputs, _, labels) in enumerate(val_dataset_loader):           
                     inputs, labels = inputs.to(device), labels.to(device)
                     outputs = model(inputs)
                     loss = criterion(outputs, labels)
@@ -132,9 +132,14 @@ def train_model(train_dataset_loader, val_dataset_loader, num_epochs, learning_r
                     total += labels.size(0)
                     correct += (predicted == labels).sum().item()
 
-                    my_logger.info(f"Labels (first 5): {labels.cpu().numpy()[:5]}")
-                    my_logger.info(f"Predictions (first 5): {predicted.cpu().numpy()[:5]}")
-                    my_logger.info(f"Probabilities (first 5): {probabilities.cpu().numpy()[:5]}")
+                    if j % 100 == 0:
+                        batch_accuracy = (predictions == labels).float().mean().item()
+                        my_logger.info(f'Val batch [{j+1}/{len(val_dataset_loader)}], Loss: {loss.item()}, Accuracy: {batch_accuracy}')
+
+                    # debugging
+                    # my_logger.info(f"Labels (first 10): {labels.cpu().numpy()[:10]}")
+                    # my_logger.info(f"Predictions (first 10): {predicted.cpu().numpy()[:10]}")
+                    # my_logger.info(f"Probabilities (first 10): {probabilities.cpu().numpy()[:10]}")
 
                     all_labels.extend(labels.cpu().numpy())
                     all_probabilities.extend(probabilities.cpu().numpy())
@@ -169,11 +174,9 @@ def train_model(train_dataset_loader, val_dataset_loader, num_epochs, learning_r
                     epochs_without_improvement = 0
                     output_dir = './outputs'
                     os.makedirs(output_dir, exist_ok=True)
-
-                    file_name = f'cnn_multiclass_lung_disease_{total_samples}samples_epoch{epoch + 1}_lr{learning_rate:.5f}.pth'
-                    
+                    file_name = f'cnn_multiclass_{total_samples}smps_{epoch + 1}epoch_{learning_rate:.5f}lr_{val_recall:.3f}rec.pth'
                     torch.save(model.state_dict(), f'{output_dir}/{file_name}')
-                    my_logger.info(f'New best model saved with recall: {val_recall:.2f}')
+                    my_logger.info(f'New best model saved with recall: {val_recall:.3f}')
                 else:
                     epochs_without_improvement += 1
 
@@ -203,7 +206,6 @@ def main():
     parser.add_argument('--dataset', type=str, help='Dataset name')
     parser.add_argument('--run_cloud', action='store_true', help='Flag to indicate whether to run in cloud mode')
     parser.add_argument('--max_samples', type=int, default=None, help='Maximum number of samples to use')
-    parser.add_argument('--max_patients', type=int, default=None, help='Maximum number of patients to download')
 
     args = parser.parse_args()
     my_logger.info(f"Arguments parsed: {args}")
@@ -224,12 +226,7 @@ def main():
         storage_account_key = os.getenv('AZURE_STORAGE_KEY')
         container_name = os.getenv('BLOB_CONTAINER')
         my_logger.info(f"Downloading dataset from blob: storage_account={storage_account}, container_name={container_name}")
-        
-        if args.max_patients:
-            my_logger.info(f"Using download_from_blob_balanced with max_patients={args.max_patients}")
-            download_from_blob_balanced(storage_account, storage_account_key, container_name, dataset_folder, args.max_patients)
-        else:
-            download_from_blob(storage_account, storage_account_key, container_name, dataset_folder)
+        download_from_blob(storage_account, storage_account_key, container_name, dataset_folder)
 
     my_logger.info("Loading dataset")
     my_dataset = CCCCIIDataset2D(dataset_folder, max_samples=args.max_samples)
@@ -258,7 +255,8 @@ def main():
     splits = list(sgkf.split(np.zeros(len(my_dataset)), labels, groups=patient_ids))
 
     train_idx, val_idx = splits[args.i]
-    my_logger.info(f"Train index: {train_idx[:5]}... ({len(train_idx)} samples), Val index: {val_idx[:5]}... ({len(val_idx)} samples)")
+    my_logger.info(f"Train index: {train_idx[:10]}... ({len(train_idx)} samples)")
+    my_logger.info(f"Val index: {val_idx[:10]}... ({len(val_idx)} samples)")
 
     my_logger.info("Creating data loaders")
     train_dataset = Subset(my_dataset, train_idx)

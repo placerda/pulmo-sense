@@ -84,9 +84,9 @@ class CCCCIIDataset2D(Dataset):
         patient_list = []
         sample_counts = {class_idx: 0 for class_idx in self.classes.values()}  # Initialize counters per class
 
-        my_logger.info(f"[cccii_dataset] Current working directory: {os.getcwd()}") 
-        my_logger.info(f"[cccii_dataset] Gathering data from root directory: {self.root_dir}")
-        my_logger.info(f"[cccii_dataset] Contents of root directory: {os.listdir(self.root_dir)}")
+        my_logger.info(f"[cccii_dataset] Current working directory: {os.getcwd()}")
+        # my_logger.info(f"[cccii_dataset] Contents from current working directory: {os.listdir(os.getcwd())}") 
+        my_logger.info(f"[cccii_dataset] Contents of root directory ({self.root_dir}): {os.listdir(self.root_dir)}")
 
         # Collect all patients across all classes
         for label, class_idx in self.classes.items():
