@@ -19,15 +19,19 @@ from sklearn.model_selection import StratifiedGroupKFold
 
 from pathlib import Path
 
-from datasets import CCCCIIDataset2D
+from pulmo_datasets import CCCCIIDataset2D
 from utils.download import download_from_blob
 from utils.log_config import get_custom_logger
 from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix
 my_logger = get_custom_logger('train_cnn2d_multiclass_128')
 
+import sys
+
 class CNN_Net(nn.Module):
-    def __init__(self, num_classes, dropout_rate=0.5):
+    def __init__(self, num_classes, input_height=None, input_width=None, dropout_rate=0.5):
         super(CNN_Net, self).__init__()
+        self.input_height = input_height  # Optional: store these if needed
+        self.input_width = input_width        
         self.cnn = nn.Sequential(
             nn.Conv2d(1, 32, kernel_size=3, padding=1),
             nn.ReLU(),
@@ -178,7 +182,8 @@ def train_model(train_dataset_loader, val_dataset_loader, num_epochs, learning_r
                     epochs_without_improvement = 0
                     output_dir = './outputs'
                     os.makedirs(output_dir, exist_ok=True)
-                    file_name = f'cnn_multiclass_128_{total_samples}smps_{epoch + 1}epoch_{learning_rate:.5f}lr_{val_recall:.3f}rec.pth'
+                    file_prefix = f'cnn_multiclass_128_{total_samples}smps_{epoch + 1}epoch_{learning_rate:.5f}lr_{val_recall:.3f}rec'
+                    file_name = f'{file_prefix}.pth'
                     torch.save(model.state_dict(), f'{output_dir}/{file_name}')
                     my_logger.info(f'New best model saved with recall: {val_recall:.3f}')
 
@@ -186,7 +191,7 @@ def train_model(train_dataset_loader, val_dataset_loader, num_epochs, learning_r
                     cm = confusion_matrix(all_labels, np.array(all_probabilities).argmax(axis=1))
                     disp = ConfusionMatrixDisplay(confusion_matrix=cm)
                     disp.plot(cmap=plt.cm.Blues)
-                    confusion_matrix_file = f'{output_dir}/confusion_matrix_{epoch+1}.png'
+                    confusion_matrix_file = f'{output_dir}/{file_prefix}_confusion_matrix.png'
                     plt.savefig(confusion_matrix_file)
 
                 else:
@@ -210,12 +215,12 @@ def main():
     # get command-line arguments
     my_logger.info("Parsing command-line arguments")
     parser = argparse.ArgumentParser(description='Train a model')
-    parser.add_argument("--num_epochs", type=int, help="number of epochs to train")
-    parser.add_argument("--batch_size", type=int, help="batch size")
-    parser.add_argument("--learning_rate", type=float, help="learning rate")
-    parser.add_argument("--k", type=int, help="number of folds for cross-validation")
-    parser.add_argument("--i", type=int, help="current fold index (0-based)")
-    parser.add_argument('--dataset', type=str, help='Dataset name')
+    parser.add_argument("--num_epochs", type=int, default=10, help="number of epochs to train")
+    parser.add_argument("--batch_size", type=int, default=32, help="batch size")
+    parser.add_argument("--learning_rate", type=float, default=0.0005, helpa="learning rate")
+    parser.add_argument("--k", type=int, default=5, help="number of folds for cross-validation")
+    parser.add_argument("--i", type=int, default=0, help="current fold index (0-based)")
+    parser.add_argument('--dataset', type=str, default='ccccii', help='Dataset name')
     parser.add_argument('--run_cloud', action='store_true', help='Flag to indicate whether to run in cloud mode')
     parser.add_argument('--max_samples', type=int, default=None, help='Maximum number of samples to use')
 
@@ -285,10 +290,12 @@ def main():
         num_epochs=args.num_epochs,
         learning_rate=args.learning_rate
     )
+
     my_logger.info("Model training completed")
 
     mlflow.end_run()
     my_logger.info("MLflow run ended")
 
 if __name__ == "__main__":
+    print("Current Working Directory:", os.getcwd())
     main()

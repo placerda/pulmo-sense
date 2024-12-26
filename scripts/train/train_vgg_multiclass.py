@@ -20,7 +20,7 @@ from sklearn.model_selection import StratifiedGroupKFold
 
 import matplotlib.pyplot as plt
 
-from datasets.ccccii_dataset import CCCCIIDataset2D
+from pulmo_datasets.ccccii_dataset import CCCCIIDataset2D
 from utils.download import download_from_blob
 from utils.log_config import get_custom_logger
 

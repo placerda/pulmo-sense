@@ -19,7 +19,7 @@ from sklearn.model_selection import StratifiedGroupKFold
 
 from pathlib import Path
 
-from datasets.ccccii_dataset import CCCCIIDataset2D
+from pulmo_datasets.ccccii_dataset import CCCCIIDataset2D
 from utils.download import download_from_blob
 from utils.log_config import get_custom_logger
 my_logger = get_custom_logger('train_lstm_multiclass')

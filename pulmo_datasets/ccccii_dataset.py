@@ -94,11 +94,9 @@ class CCCCIIDataset2D(Dataset):
         return img
 
     def _extract_patient_id(self, scan_path):
-        # Split the path to get the directory corresponding to the patient
-        patient_dir = os.path.dirname(scan_path)
-        # Split again to get the name of the patient directory, which is the patient ID
-        patient_id = os.path.basename(os.path.dirname(patient_dir))
-        return patient_id
+        # Get the immediate parent directory of the scan path
+        patient_id = os.path.basename(os.path.dirname(scan_path))
+        return int(patient_id)
 
     def __getitem__(self, idx):
         scan_path, slice_idx, label = self.data[idx]
@@ -113,4 +111,4 @@ class CCCCIIDataset2D(Dataset):
         img = torch.tensor(img).unsqueeze(0)  # Add the channel dimension
         
         # Return the image, patient ID, and the label
-        return img, patient_id, torch.tensor(label).long()
+        return img, torch.tensor(patient_id).long(), torch.tensor(label).long()

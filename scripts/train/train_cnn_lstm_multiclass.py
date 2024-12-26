@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader, Subset
 from sklearn.metrics import precision_score, recall_score, f1_score, roc_auc_score
 from sklearn.model_selection import StratifiedKFold
 
-from datasets.ccccii_dataset import CCCCIIDataset
+from pulmo_datasets.ccccii_dataset import CCCCIIDataset
 from utils.download import download_from_blob
 from utils.log_config import get_custom_logger
 
