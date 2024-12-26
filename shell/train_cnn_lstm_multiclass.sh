@@ -1,13 +1,19 @@
 #!/bin/bash
 
-# Initialize Conda (optional; adapt if you use a different environment manager)
-conda init
+# Source Conda initialization
+source ~/anaconda3/etc/profile.d/conda.sh
 
-# Activate your environment
+# Activate the Conda environment
 conda activate pulmo-sense
 
-# Generate a timestamp for your log file
+# Generate a timestamp for the log file
 timestamp=$(date +"%Y%m%d_%H%M%S")
+
+# Ensure logs directory exists
+mkdir -p logs
+
+# Set PYTHONPATH and run the Python script
+export PYTHONPATH=$(pwd)
 
 # Run the CNN-LSTM training script locally
 python -m scripts.train.train_cnn_lstm_multiclass \

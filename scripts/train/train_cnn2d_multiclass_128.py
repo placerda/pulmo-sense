@@ -19,7 +19,7 @@ from sklearn.model_selection import StratifiedGroupKFold
 
 from pathlib import Path
 
-from datasets.ccccii_dataset import CCCCIIDataset2D
+from datasets import CCCCIIDataset2D
 from utils.download import download_from_blob
 from utils.log_config import get_custom_logger
 from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix
@@ -227,8 +227,8 @@ def main():
 
     # Determine dataset folder and whether to download from blob
     if not args.run_cloud:
-        my_logger.info(f"Running in local mode, setting dataset folder to 'data/raw/{dataset}'")
-        dataset_folder = f"data/raw/{dataset}"
+        my_logger.info(f"Running in local mode, setting dataset folder to 'data/{dataset}'")
+        dataset_folder = f"data/{dataset}"
     else:
         my_logger.info("Running in cloud mode, downloading dataset from blob storage")
         dataset_folder = dataset

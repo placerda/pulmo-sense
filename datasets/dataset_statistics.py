@@ -92,4 +92,4 @@ if __name__ == "__main__":
 
 
 # Example:
-# python -m datasets.dataset_statistics data/raw/ccccii
+# python -m datasets.dataset_statistics data/ccccii

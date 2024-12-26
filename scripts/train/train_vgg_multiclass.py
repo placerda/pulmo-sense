@@ -195,7 +195,7 @@ def main():
     mlflow.start_run()
 
     if not args.run_cloud:
-        dataset_folder = f"data/raw/{args.dataset}"
+        dataset_folder = f"data/{args.dataset}"
         my_logger.info("Local mode. dataset_folder=%s", dataset_folder)
     else:
         dataset_folder = args.dataset

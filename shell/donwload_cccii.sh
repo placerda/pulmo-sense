@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Directory to download the files
-download_dir="data/raw/ccccii"
+download_dir="data/ccccii"
 
 # Create the directory if it doesn't exist
 mkdir -p "$download_dir"
