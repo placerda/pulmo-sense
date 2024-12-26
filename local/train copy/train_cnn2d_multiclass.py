@@ -5,6 +5,7 @@ import time
 import traceback
 
 from dotenv import load_dotenv
+import matplotlib.pyplot as plt
 import mlflow
 import numpy as np
 import torch
@@ -12,14 +13,16 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Subset
 from sklearn.metrics import precision_score, recall_score, f1_score, roc_auc_score
+from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix
 from sklearn.model_selection import StratifiedKFold
 from sklearn.model_selection import StratifiedGroupKFold
+
 from pathlib import Path
 
 from datasets.ccccii_dataset import CCCCIIDataset2D
 from utils.download import download_from_blob
 from utils.log_config import get_custom_logger
-
+from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix
 my_logger = get_custom_logger('train_cnn2d_multiclass')
 
 class CNN_Net(nn.Module):
@@ -133,7 +136,11 @@ def train_model(train_dataset_loader, val_dataset_loader, num_epochs, learning_r
                     correct += (predicted == labels).sum().item()
 
                     if j % 100 == 0:
-                        batch_accuracy = (predictions == labels).float().mean().item()
+                        batch_size = predictions.size(0)  # Get actual batch size
+                        # Ensure the comparison uses only valid batch size
+                        correct += (predicted[:batch_size] == labels[:batch_size]).sum().item()
+
+                        batch_accuracy = (predictions[:batch_size] == labels[:batch_size]).float().mean().item()
                         my_logger.info(f'Val batch [{j+1}/{len(val_dataset_loader)}], Loss: {loss.item()}, Accuracy: {batch_accuracy}')
 
                     # debugging
@@ -177,6 +184,14 @@ def train_model(train_dataset_loader, val_dataset_loader, num_epochs, learning_r
                     file_name = f'cnn_multiclass_{total_samples}smps_{epoch + 1}epoch_{learning_rate:.5f}lr_{val_recall:.3f}rec.pth'
                     torch.save(model.state_dict(), f'{output_dir}/{file_name}')
                     my_logger.info(f'New best model saved with recall: {val_recall:.3f}')
+
+                    # Generate and save confusion matrix
+                    cm = confusion_matrix(all_labels, np.array(all_probabilities).argmax(axis=1))
+                    disp = ConfusionMatrixDisplay(confusion_matrix=cm)
+                    disp.plot(cmap=plt.cm.Blues)
+                    confusion_matrix_file = f'{output_dir}/confusion_matrix_{epoch+1}.png'
+                    plt.savefig(confusion_matrix_file)
+
                 else:
                     epochs_without_improvement += 1
 

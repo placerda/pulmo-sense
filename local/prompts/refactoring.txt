@@ -1,0 +1,65 @@
+# Goal
+
+Develop a GitHub project to analyze lung CT scans for ternary classification: COVID-19, bacterial pneumonia, or normal.  
+
+The project will support training and validation for the following neural networks:  
+1. Basic CNN  
+2. CNN-LSTM  
+3. VGG  
+4. Vision Transformer  
+
+### Key Details for CNN-LSTM:  
+- Basic CNN is used for feature extraction in LSTM training.  
+- LSTM inputs a sequence of vectors representing a scan, where each vector is a 1D embedding of a slice.  
+- Generate embeddings using the flattened output from the CNN after convolutional layers but before fully connected layers.
+
+---
+
+## Execution: Local and Cloud  
+
+- Use PyTorch.  
+- Provide a notebook for training/validation on Azure Machine Learning (in `notebook` folder).  
+- Include a local program (in `shell` folder) for quick functionality testing with a minimal dataset.  
+
+Each neural network option should have its own notebook and local script.
+
+---
+
+## Directory Structure  
+
+- Training, testing, and prediction code resides in the `scripts` folder.
+
+---
+
+## Validation  
+
+- Azure ML runs must support 5-fold cross-validation or hold-out validation (use a parameter for it).  
+- Metrics for both training and validation include:  
+  - Loss, Accuracy, Recall, Precision, F1 Score, AUC, and Confusion Matrix.
+
+---
+
+## Datasets  
+
+- Dataset starts at `root_dir` with subdirectories:  
+  - `CP` (COVID-19 scans)  
+  - `NCP` (Common Pneumonia scans)  
+  - `Normal` (Normal scans)  
+
+### Directory Example:  
+- `root_dir/NCP/<patient_id>/<scan_id>/<slice>.jpg`  
+- `root_dir/CP/<patient_id>/<scan_id>/<slice>.jpg`  
+- `root_dir/Normal/<patient_id>/<scan_id>/<slice>.jpg`  
+
+### Processing Rules:  
+1. Normalize images.  
+2. Select 30 central slices from each stack.  
+3. Resize images to 512x512 pixels.  
+4. Discard scans with fewer than 30 slices.  
+5. To avoid data leakage, pick only the first scan with 30+ slices per patient.
+
+---
+
+## Initial Project Code  
+
+You will receive the current state of the project for reference. Please build and adjust from there, generating the remaining components.

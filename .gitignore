@@ -1,11 +1,12 @@
 data/
 input/
-output/
 outputs/
 data/
 ccccii/
 mlruns/
+models/
 logs/*
+__azurite*.json
 
 # Editors
 .vscode/

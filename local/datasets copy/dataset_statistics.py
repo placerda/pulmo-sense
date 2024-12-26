@@ -5,11 +5,51 @@ from collections import defaultdict
 from tabulate import tabulate
 
 class DatasetStatistics:
-    def __init__(self, dataset_root):
-        self.ccccii_dataset = self._load_dataset(dataset_root)
+    def __init__(self, mosmed_root, covidctmd_root, luna16_root, ccccii_root):
+        self.mosmed_dataset = self._load_mosmed_dataset(mosmed_root)
+        self.covidctmd_dataset = self._load_covidctmd_dataset(covidctmd_root)
+        self.luna16_dataset = self._load_luna16_dataset(luna16_root)
+        self.ccccii_dataset = self._load_ccccii_dataset(ccccii_root)
         self.combined_dataset = self._combine_datasets()
 
-    def _load_dataset(self, root_dir):
+    def _load_mosmed_dataset(self, root_dir):
+        dataset = defaultdict(int)
+        image_dir = os.path.join(root_dir, 'images')
+        label_dir = os.path.join(root_dir, 'covid_labels')
+        samples = os.listdir(image_dir)
+
+        for sample in samples:
+            label_path = os.path.join(label_dir, sample, 'covid_label.json')
+            with open(label_path, 'r') as f:
+                label_data = json.load(f)
+            label = 1 if label_data else 0
+            if label == 1:
+                dataset['COVID-19 Cases'] += 1
+            else:
+                dataset['Normal Cases'] += 1
+        return dataset
+
+    def _load_covidctmd_dataset(self, root_dir):
+        dataset = defaultdict(int)
+        case_types = ['Cap Cases', 'COVID-19 Cases', 'Normal Cases']
+
+        for case_type in case_types:
+            case_dir = os.path.join(root_dir, case_type)
+            for _ in os.listdir(case_dir):
+                dataset[case_type] += 1
+        return dataset
+
+    def _load_luna16_dataset(self, root_dir):
+        dataset = {'Nodules': 0}
+        subsets = [os.path.join(root_dir, f'subset{i}') for i in range(10)]
+
+        for subset in subsets:
+            for study in os.listdir(subset):
+                if study.endswith('.mhd'):
+                    dataset['Nodules'] += 1
+        return dataset
+
+    def _load_ccccii_dataset(self, root_dir):
         dataset = defaultdict(int)
         labels = ['CP', 'NCP', 'Normal']
 
@@ -23,12 +63,27 @@ class DatasetStatistics:
                     dataset[label] += 1
         return dataset
 
+    def _combine_datasets(self):
+        combined_dataset = defaultdict(int)
+        for dataset in [self.mosmed_dataset, self.covidctmd_dataset, self.luna16_dataset, self.ccccii_dataset]:
+            for key, value in dataset.items():
+                combined_dataset[key] += value
+        return combined_dataset
+
     def get_statistics(self):
         datasets = [
-            self.ccccii_dataset
+            self.mosmed_dataset, 
+            self.covidctmd_dataset, 
+            self.luna16_dataset, 
+            self.ccccii_dataset, 
+            self.combined_dataset
         ]
         dataset_names = [
-            'CCCCIIDataset'
+            'MosMedDataset', 
+            'CovidCtMdDataset', 
+            'Luna16Dataset', 
+            'CCCCIIDataset', 
+            'CombinedDataset'
         ]
 
         samples_table = []
@@ -74,8 +129,8 @@ class DatasetStatistics:
         
         return samples_markdown_table, train_val_markdown_table
 
-def main(dataset_root):
-    dataset_stats = DatasetStatistics(dataset_root)
+def main(mosmed_root, covidctmd_root, luna16_root, ccccii_root):
+    dataset_stats = DatasetStatistics(mosmed_root, covidctmd_root, luna16_root, ccccii_root)
     table1, table2 = dataset_stats.get_statistics()
     print(table1)
     print("")    
@@ -83,13 +138,16 @@ def main(dataset_root):
 
 if __name__ == "__main__":
     if len(sys.argv) != 5:
-        print("Usage: python script_name.py <ccccii_root>")
+        print("Usage: python script_name.py <mosmed_root> <covidctmd_root> <luna16_root> <ccccii_root>")
         sys.exit(1)
 
-    dataset_root = sys.argv[1]
+    mosmed_root = sys.argv[1]
+    covidctmd_root = sys.argv[2]
+    luna16_root = sys.argv[3]
+    ccccii_root = sys.argv[4]
     
-    main(dataset_root)
+    main(mosmed_root, covidctmd_root, luna16_root, ccccii_root)
 
 
 # Example:
-# python -m datasets.dataset_statistics data/raw/ccccii
+# python -m datasets.dataset_statistics data/processed/mosmed data/raw/covidctmd data/raw/luna16 data/raw/ccccii

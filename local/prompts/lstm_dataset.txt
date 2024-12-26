@@ -1,3 +1,66 @@
+I am creating a pytorch script to train a lstm neural network, the neural network does ternary classification.
+
+The dataset is initialized with a root_dir, within this root_dir, there are three subdirectories: CP, NCP and Normal. 
+
+Each of this subdirectories represents an specific label, 'NCP' contains scans with Common Pneumonia, 'CP' contains scans with COVID-19 and 'Normal' contain scans that are within normal limits and do not show any pathology. 
+
+Each subdirectory contains subfolders that correspond to the patient_id, inside each patient_id folder there are scan folders where each scan folder has a number of jpg files that corresponds to slices in a scan.
+
+For example 'NCP' scans are stored like 'root_dir/NCP/9999/9999/9999.jpg', 'CP' are stored like 'root_dir/CP/9999/9999/9999.jpg' and 'root_dir/Normal/9999/9999/9999.jpg' are stored like 'root_dir/CP/9999/9999/9999.jpg'. 
+
+I need your help to create a Dataset class that will make these files as proper input to a LSTM network I'm gonna train in Pytorch. 
+
+The LSTM network input is a sequence of vectors that represents a scan. 
+
+Each vector is an embedding representation of a slice of that scan.
+
+To generate the embeddings representation use the flattened version of the features extracted from the CNN_Net CNN (after the convolutional layers and before the fully connected layers) as a 1D feature vector for further processing.
+
+Also suggest and LSTM for me to train with the Dataset class you will create.
+
+I will share with you CCCCIIDataset2D as a reference of the Dataset class I used to train the CNN_Net.
+
+Use the same approach as CCCCIIDataset2D gettting central 30 slices.
+
+trained CNN_Net will be available at models/cnn_multiclass_lung_disease_249741samples_epoch4_lr0.00050.pth
+
+
+CNN_Net:
+class CNN_Net(nn.Module):
+    def __init__(self, num_classes, input_height, input_width, dropout_rate=0.5):
+        super(CNN_Net, self).__init__()
+        self.cnn = nn.Sequential(
+            nn.Conv2d(1, 32, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            nn.Dropout(dropout_rate),  # Dropout after pooling
+            nn.Conv2d(32, 64, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            nn.Dropout(dropout_rate),  # Dropout after pooling
+            nn.Conv2d(64, 128, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            nn.Dropout(dropout_rate),  # Dropout after pooling
+        )
+        self.fc = nn.Linear(128 * (input_height // 8) * (input_width // 8), num_classes)
+        
+    def forward(self, x, return_embedding=False):
+        if len(x.size()) != 4:
+            raise ValueError(f"Expected 4D input (batch_size, channels, height, width), got {x.size()}")
+
+        batch_size, channels, height, width = x.size()
+        x = x.float()
+        embedding = self.cnn(x)
+        flattened = embedding.view(batch_size, -1)
+        
+        if return_embedding:
+            return flattened  # Retorna apenas o embedding
+
+        x = self.fc(flattened)
+        return x
+
+CCCCIIDataset2D:
 import os
 import torch
 from torch.utils.data import Dataset

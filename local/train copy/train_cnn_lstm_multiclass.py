@@ -13,11 +13,11 @@ from torch.utils.data import DataLoader, Subset
 from sklearn.metrics import precision_score, recall_score, f1_score, roc_auc_score
 from sklearn.model_selection import StratifiedKFold
 
-from datasets.ccccii_dataset import CCCCIIBinaryDataset
+from datasets.ccccii_dataset import CCCCIIDataset
 from utils.download import download_from_blob
 from utils.log_config import get_custom_logger
 
-my_logger = get_custom_logger('train_cnn_lstm_binary')
+my_logger = get_custom_logger('train_cnn_lstm_multiclass')
 
 class CNN_LSTM_Net(nn.Module):
     def __init__(self, dropout_rate=0.5):
@@ -36,32 +36,30 @@ class CNN_LSTM_Net(nn.Module):
             nn.MaxPool3d(kernel_size=2, stride=2),
             nn.Dropout(dropout_rate),  # Dropout after pooling
         )
-        self.lstm = nn.LSTM(input_size=128 * 64 * 64, hidden_size=64, num_layers=1, batch_first=True)
+        self.lstm = nn.LSTM(input_size=128, hidden_size=64, num_layers=1, batch_first=True)
         self.dropout = nn.Dropout(dropout_rate)  # Dropout before the fully connected layer
-        self.fc = nn.Linear(64, 1)
-        self.sigmoid = nn.Sigmoid()
+        self.fc = nn.Linear(64, 3)
+        self.softmax = nn.Softmax(dim=1)  
 
     def forward(self, x):
+        my_logger.info(f'Input shape before reshaping: {x.size()}')
+        
+        if len(x.size()) != 5:
+            raise ValueError(f"Expected 5D input (batch_size, channels, depth, height, width), got {x.size()}")
+
         batch_size, channels, depth, height, width = x.size()
         x = x.float()
-        x = self.cnn(x)  # After CNN, x.shape = [batch_size, 128, depth, height, width]
-        print(f"Shape after CNN: {x.shape}")
-
-        # Reshape x to [batch_size, depth, 128 * height * width] for LSTM
-        x = x.view(batch_size, depth, 128 * height * width)
-        print(f"Shape after view: {x.shape}")
-
-        lstm_out, _ = self.lstm(x)  # LSTM expects input of shape [batch_size, sequence_length, input_size]
+        x = self.cnn(x)
+        x = x.view(batch_size, -1, 128)
+        lstm_out, _ = self.lstm(x)
         lstm_out = lstm_out[:, -1, :]  # Take the output of the last time step
         lstm_out = self.dropout(lstm_out)  # Apply dropout
         x = self.fc(lstm_out)
-        x = self.sigmoid(x)
+        x = self.softmax(x)
         return x
 
 
-# Training the model
 def train_model(train_dataset_loader, val_dataset_loader, num_epochs, learning_rate):
-
     start_time = time.time()  # Start time of training
     my_logger.info('Starting Training')
 
@@ -69,19 +67,17 @@ def train_model(train_dataset_loader, val_dataset_loader, num_epochs, learning_r
     my_logger.info(f'Using device: {device}')
 
     try:
-
         model = CNN_LSTM_Net().to(device)
-        criterion = nn.BCELoss()
+        criterion = nn.CrossEntropyLoss()
         optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-5)  # Added weight_decay for L2 regularization
 
         # Define early stopping parameters
-        early_stopping_patience = 5  # Number of epochs to wait for improvement before stopping
+        early_stopping_patience = 3  # Number of epochs to wait for improvement before stopping
         epochs_without_improvement = 0  # Counter for epochs without improvement
 
         best_recall = 0.0
 
         for epoch in range(num_epochs):
-            
             my_logger.info(f'Starting epoch {epoch + 1}')
 
             # Training phase
@@ -93,15 +89,17 @@ def train_model(train_dataset_loader, val_dataset_loader, num_epochs, learning_r
             total_samples = 0
 
             for i, (inputs, labels) in enumerate(train_dataset_loader):
-
+                # my_logger.info(f'Batch {i} shape: {inputs.size()}')
                 inputs, labels = inputs.to(device), labels.to(device)
-                # inputs = inputs.unsqueeze(1)  # Add channel dimension if necessary
-                print(f"Shape before model: {inputs.shape}")          
+                # Remove the following line as the channel dimension is already present in the dataset
+                # inputs = inputs.unsqueeze(1)  # This line is causing the extra dimension
+
                 # Forward pass: Compute predicted y by passing x to the model
                 outputs = model(inputs)
 
+
                 # Compute and print loss
-                loss = criterion(outputs.squeeze(), labels)
+                loss = criterion(outputs, labels)
                 
                 # Zero gradients, perform a backward pass, and update the weights.
                 optimizer.zero_grad()
@@ -110,7 +108,7 @@ def train_model(train_dataset_loader, val_dataset_loader, num_epochs, learning_r
 
                 # Compute training metrics
                 total_loss += loss.item()
-                predictions = outputs.squeeze() > 0.5
+                predictions = outputs.argmax(dim=1)
                 correct_predictions += (predictions == labels).sum().item()
                 total_samples += labels.size(0)                
 
@@ -137,14 +135,14 @@ def train_model(train_dataset_loader, val_dataset_loader, num_epochs, learning_r
                 
                 for inputs, labels in val_dataset_loader:
                     inputs, labels = inputs.to(device), labels.to(device)
-                    inputs = inputs.unsqueeze(1)  
+                    # inputs = inputs.unsqueeze(1)  
 
                     outputs = model(inputs)
-                    loss = criterion(outputs.squeeze(), labels)
+                    loss = criterion(outputs, labels)
                     val_loss += loss.item()
 
-                    probabilities = torch.sigmoid(outputs).squeeze()  # Apply sigmoid to get probabilities
-                    predicted = probabilities > 0.5  # Convert probabilities to binary predictions
+                    probabilities = outputs.softmax(dim=1)  # Get probabilities
+                    predicted = probabilities.argmax(dim=1)  # Convert probabilities to predictions
                     total += labels.size(0)
                     correct += (predicted == labels).sum().item()
 
@@ -155,13 +153,13 @@ def train_model(train_dataset_loader, val_dataset_loader, num_epochs, learning_r
                 # Calculate validation metrics
                 val_loss /= len(val_dataset_loader)
                 val_accuracy = 100 * correct / total
-                recall = recall_score(all_labels, (np.array(all_probabilities) > 0.5).astype(int))
-                precision = precision_score(all_labels, (np.array(all_probabilities) > 0.5).astype(int))
-                f1 = f1_score(all_labels, (np.array(all_probabilities) > 0.5).astype(int))
-                auc = roc_auc_score(all_labels, all_probabilities)  # Use probabilities for AUC
+                recall = recall_score(all_labels, np.array(all_probabilities).argmax(axis=1), average='macro')
+                precision = precision_score(all_labels, np.array(all_probabilities).argmax(axis=1), average='macro')
+                f1 = f1_score(all_labels, np.array(all_probabilities).argmax(axis=1), average='macro')
+                auc = roc_auc_score(all_labels, all_probabilities, multi_class='ovr')
 
                 my_logger.info(f'Validation Loss: {val_loss:.4f}, Validation Accuracy: {val_accuracy:.2f}%, '
-                            f'Recall: {recall:.2f}, Precision: {precision:.2f}, F1 Score: {f1:.2f}')
+                               f'Recall: {recall:.2f}, Precision: {precision:.2f}, F1 Score: {f1:.2f}')
 
                 mlflow.log_metric("val_loss", val_loss, step=epoch)
                 mlflow.log_metric("val_accuracy", val_accuracy, step=epoch)
@@ -169,7 +167,6 @@ def train_model(train_dataset_loader, val_dataset_loader, num_epochs, learning_r
                 mlflow.log_metric("val_precision", precision, step=epoch)
                 mlflow.log_metric("val_f1_score", f1, step=epoch)
                 mlflow.log_metric("val_auc", auc, step=epoch)
-
 
                 # Check for improvement
                 if recall > best_recall:
@@ -191,7 +188,7 @@ def train_model(train_dataset_loader, val_dataset_loader, num_epochs, learning_r
         my_logger.info(f'Training completed in {training_time:.2f} seconds')
 
     except Exception as e:
-        my_logger.error("Error during training: ", str(e))
+        my_logger.error("Error during training: %s", str(e))  # Updated logging to properly handle arguments
         my_logger.error("Detailed traceback:")
         my_logger.error(traceback.format_exc())
 
@@ -233,7 +230,7 @@ def main():
     dataset_folder = dataset
     download_from_blob(storage_account, storage_account_key, container_name, dataset_folder)
 
-    my_dataset = CCCCIIBinaryDataset(args.dataset)
+    my_dataset = CCCCIIDataset(args.dataset)
 
     # Extract labels from the dataset
     labels = [sample[1] for sample in my_dataset]  # Assuming my_dataset[i] returns (input, label)
