@@ -7,6 +7,8 @@ mlruns/
 models/
 logs/*
 __azurite*.json
+local/
+outputs/
 
 # Editors
 .vscode/
