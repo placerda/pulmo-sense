@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# File: shell/train_vgg_multiclass.sh
+# File: shell/train_cnn_lstm_multiclass.sh
 
 # Source Conda initialization
 source ~/anaconda3/etc/profile.d/conda.sh
@@ -17,12 +17,14 @@ mkdir -p logs
 # Set PYTHONPATH and run the Python script
 export PYTHONPATH=$(pwd)
 
-python -m scripts.train.train_vgg_multiclass \
+python -m scripts.train.train_lstm_multiclass \
   --dataset ccccii \
   --num_epochs 1 \
   --k 5 \
   --i 0 \
   --batch_size 16 \
   --learning_rate 0.0005 \
-  --max_samples 100 \
-  2>&1 | tee logs/train_vgg_multiclass_$timestamp.log &
+  --cnn_model_path "models/cnn_multiclass_800smps_001epoch_0.00050lr_0.333rec.pth" \
+  --max_samples 500 \
+  --sequence_length 30 \
+  2>&1 | tee logs/train_lstm_multiclass_$timestamp.log &

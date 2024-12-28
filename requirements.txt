@@ -1,4 +1,6 @@
 aiohttp>=3.8.5
+azure-ai-ml==1.23.0
+azure-identity==1.15.0
 azure-ml==0.0.1
 azure-ml-component==0.9.18.post2
 azureml-contrib-services==1.56.0

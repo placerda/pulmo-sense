@@ -12,8 +12,11 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, Subset
 from sklearn.metrics import precision_score, recall_score, f1_score, roc_auc_score
 from sklearn.model_selection import StratifiedKFold
+from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix
+import matplotlib.pyplot as plt
+import random
 
-from pulmo_datasets.ccccii_dataset import CCCCIIDataset
+from datasets.ccccii_dataset import CCCIIIDataset3D
 from utils.download import download_from_blob
 from utils.log_config import get_custom_logger
 
@@ -88,7 +91,7 @@ def train_model(train_dataset_loader, val_dataset_loader, num_epochs, learning_r
             correct_predictions = 0
             total_samples = 0
 
-            for i, (inputs, labels) in enumerate(train_dataset_loader):
+            for i, (inputs, _, labels) in enumerate(train_dataset_loader):
                 # my_logger.info(f'Batch {i} shape: {inputs.size()}')
                 inputs, labels = inputs.to(device), labels.to(device)
                 # Remove the following line as the channel dimension is already present in the dataset
@@ -133,7 +136,7 @@ def train_model(train_dataset_loader, val_dataset_loader, num_epochs, learning_r
                 all_labels = []
                 all_probabilities = []
                 
-                for inputs, labels in val_dataset_loader:
+                for j, (inputs, _, labels) in enumerate(val_dataset_loader):                      
                     inputs, labels = inputs.to(device), labels.to(device)
                     # inputs = inputs.unsqueeze(1)  
 
@@ -146,6 +149,10 @@ def train_model(train_dataset_loader, val_dataset_loader, num_epochs, learning_r
                     total += labels.size(0)
                     correct += (predicted == labels).sum().item()
 
+                    if j % 100 == 0:
+                        batch_accuracy = (predicted == labels).float().mean().item()
+                        my_logger.info(f'Val batch [{j+1}/{len(val_dataset_loader)}], Loss: {loss.item()}, Accuracy: {batch_accuracy}')                    
+
                     # Collect all labels and probabilities for metrics calculation
                     all_labels.extend(labels.cpu().numpy())
                     all_probabilities.extend(probabilities.cpu().numpy())  # Store probabilities
@@ -153,30 +160,47 @@ def train_model(train_dataset_loader, val_dataset_loader, num_epochs, learning_r
                 # Calculate validation metrics
                 val_loss /= len(val_dataset_loader)
                 val_accuracy = 100 * correct / total
-                recall = recall_score(all_labels, np.array(all_probabilities).argmax(axis=1), average='macro')
-                precision = precision_score(all_labels, np.array(all_probabilities).argmax(axis=1), average='macro')
-                f1 = f1_score(all_labels, np.array(all_probabilities).argmax(axis=1), average='macro')
-                auc = roc_auc_score(all_labels, all_probabilities, multi_class='ovr')
+
+                val_recall = recall_score(all_labels, np.array(all_probabilities).argmax(axis=1), average='macro', zero_division=0)
+                val_precision = precision_score(all_labels, np.array(all_probabilities).argmax(axis=1), average='macro', zero_division=0)
+                f1 = f1_score(all_labels, np.array(all_probabilities).argmax(axis=1), average='macro', zero_division=0)
+                
+                try:
+                    auc = roc_auc_score(all_labels, all_probabilities, multi_class='ovr')
+                except ValueError as e:
+                    my_logger.error(f'Error calculating AUC: {e}')
+                    auc = 0
 
                 my_logger.info(f'Validation Loss: {val_loss:.4f}, Validation Accuracy: {val_accuracy:.2f}%, '
-                               f'Recall: {recall:.2f}, Precision: {precision:.2f}, F1 Score: {f1:.2f}')
+                               f'Recall: {val_recall:.2f}, Precision: {val_precision:.2f}, F1 Score: {f1:.2f}, AUC: {auc:.2f}')
 
                 mlflow.log_metric("val_loss", val_loss, step=epoch)
                 mlflow.log_metric("val_accuracy", val_accuracy, step=epoch)
-                mlflow.log_metric("val_recall", recall, step=epoch)
-                mlflow.log_metric("val_precision", precision, step=epoch)
+                mlflow.log_metric("val_recall", val_recall, step=epoch)
+                mlflow.log_metric("val_precision", val_precision, step=epoch)
                 mlflow.log_metric("val_f1_score", f1, step=epoch)
                 mlflow.log_metric("val_auc", auc, step=epoch)
 
                 # Check for improvement
-                if recall > best_recall:
-                    best_recall = recall
-                    epochs_without_improvement = 0  # Reset counter
-                    # Save the model
-                    torch.save(model.state_dict(), f'./outputs/cnn_lstm_model.pth')
-                    my_logger.info(f'New best model saved with recall: {recall:.2f}')
+                if val_recall > best_recall:
+                    best_recall = val_recall
+                    epochs_without_improvement = 0
+                    output_dir = './outputs'
+                    os.makedirs(output_dir, exist_ok=True)
+                    file_prefix = f'cnn_multiclass_{total_samples}smps_{epoch + 1:03}epoch_{learning_rate:.5f}lr_{val_recall:.3f}rec'
+                    file_name = f'{file_prefix}.pth'
+                    torch.save(model.state_dict(), f'{output_dir}/{file_name}')
+                    my_logger.info(f'New best model saved with recall: {val_recall:.3f}')
+
+                    # Generate and save confusion matrix
+                    cm = confusion_matrix(all_labels, np.array(all_probabilities).argmax(axis=1))
+                    disp = ConfusionMatrixDisplay(confusion_matrix=cm)
+                    disp.plot(cmap=plt.cm.Blues)
+                    confusion_matrix_file = f'{output_dir}/{file_prefix}_confusion_matrix.png'
+                    plt.savefig(confusion_matrix_file)
+
                 else:
-                    epochs_without_improvement += 1  # Increment counter
+                    epochs_without_improvement += 1
 
             # Early stopping check
             if epochs_without_improvement >= early_stopping_patience:
@@ -198,48 +222,65 @@ def main():
 
     # get command-line arguments
     parser = argparse.ArgumentParser(description='Train a model')
-    parser.add_argument("--num_epochs", type=int, help="number of epochs to train")
-    parser.add_argument("--batch_size", type=int, help="batch size")
-    parser.add_argument("--learning_rate", type=float, help="learning rate")
-    parser.add_argument("--k", type=int, help="number of folds for cross-validation")
-    parser.add_argument("--i", type=int, help="current fold index (0-based)")
-    parser.add_argument('--dataset', type=str, help='Dataset name')
+    parser.add_argument("--num_epochs", type=int, default=20, help="number of epochs to train")
+    parser.add_argument("--batch_size", type=int, default=16, help="batch size")
+    parser.add_argument("--learning_rate", type=float, default=0.0005, help="learning rate")
+    parser.add_argument("--k", type=int, default=5, help="number of folds for cross-validation")
+    parser.add_argument("--i", type=int, default=0, help="current fold index (0-based)")
+    parser.add_argument('--dataset', type=str, default='ccccii', help='Dataset name')
+    parser.add_argument('--run_cloud', action='store_true', help='Flag to indicate whether to run in cloud mode')
+    parser.add_argument('--max_samples', type=int, default=0, help='Maximum number of samples to use')
+
     args = parser.parse_args()
-
-
-    my_logger.info(
-        f'dataset: {args.dataset}, '
-        f'k: {args.k}, '
-        f'i: {args.i}, '
-        f'num_epochs: {args.num_epochs}, '
-        f'batch_size: {args.batch_size}, '
-        f'learning_rate: {args.learning_rate}'
-    )
+    my_logger.info(f"Arguments parsed: {args}")
+    my_logger.info(f"Current Working Directory: {os.getcwd()}")
 
     dataset = args.dataset
+
+    if not args.run_cloud:
+        my_logger.info(f"Running in local mode, setting dataset folder to 'data/{dataset}'")
+        dataset_folder = f"data/{dataset}"
+    else:
+        my_logger.info("Running in cloud mode, downloading dataset from blob storage")
+        dataset_folder = args.dataset
+        load_dotenv()
+        storage_account = os.getenv('AZURE_STORAGE_ACCOUNT')
+        storage_account_key = os.getenv('AZURE_STORAGE_KEY')
+        container_name = os.getenv('BLOB_CONTAINER')
+        my_logger.info(f"Downloading dataset from blob: storage_account={storage_account}, container_name={container_name}")
+        download_from_blob(storage_account, storage_account_key, container_name, dataset_folder)
 
     # Start Run
     mlflow.start_run()
 
-    # get storage parameters
-    load_dotenv()
-    storage_account = os.getenv('AZURE_STORAGE_ACCOUNT')
-    storage_account_key = os.getenv('AZURE_STORAGE_KEY')
-    container_name = os.getenv('BLOB_CONTAINER')
-    
-    dataset_folder = dataset
-    download_from_blob(storage_account, storage_account_key, container_name, dataset_folder)
-
-    my_dataset = CCCCIIDataset(args.dataset)
+    my_dataset = CCCIIIDataset3D(dataset_folder, max_samples=args.max_samples)
 
     # Extract labels from the dataset
-    labels = [sample[1] for sample in my_dataset]  # Assuming my_dataset[i] returns (input, label)
 
-    # Prepare Stratified K-Fold cross-validation
+    # Group by patient
+    my_logger.info("Extracting patient IDs and labels")
+    patient_ids = [sample[1] for sample in my_dataset]
+    labels = [sample[2] for sample in my_dataset]  # Extract labels
+
+    # Shuffle patients
+    random.seed(42)
+    combined = list(zip(patient_ids, labels))
+    random.shuffle(combined)
+    patient_ids, labels = zip(*combined)
+    patient_ids = list(patient_ids)
+    labels = list(labels)    
+
+    if args.i < 0 or args.i >= args.k:
+        my_logger.error(f"Invalid fold index 'i': {args.i}. It must be between 0 and {args.k - 1}.")
+        raise ValueError(f"Fold index 'i' must be between 0 and {args.k - 1}, but got {args.i}.")
+
+    my_logger.info(f"Performing Stratified K-Fold with {args.k} splits")
     skf = StratifiedKFold(n_splits=args.k, shuffle=True, random_state=42)
-    splits = list(skf.split(np.zeros(len(my_dataset)), labels))  # Pass dummy X (np.zeros) and labels
+    splits = list(skf.split(np.zeros(len(my_dataset)), labels))
 
     train_idx, val_idx = splits[args.i]
+    my_logger.info(f"Train index: {train_idx[:10]}... ({len(train_idx)} samples)")
+    my_logger.info(f"Val index: {val_idx[:10]}... ({len(val_idx)} samples)")
 
     train_dataset = Subset(my_dataset, train_idx)
     val_dataset = Subset(my_dataset, val_idx)

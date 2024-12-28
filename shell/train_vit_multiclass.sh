@@ -1,5 +1,4 @@
 #!/bin/bash
-
 # Source Conda initialization
 source ~/anaconda3/etc/profile.d/conda.sh
 
@@ -17,8 +16,10 @@ export PYTHONPATH=$(pwd)
 
 python -m scripts.train.train_vit_multiclass \
   --dataset ccccii \
-  --num_epochs 20 \
+  --num_epochs 1 \
   --k 5 \
   --i 0 \
-  --batch_size 8 \
-  --learning_rate 0.0001 > logs/train_vit_multiclass_$timestamp.log 2>&1 &
+  --batch_size 16 \
+  --learning_rate 0.0005 \
+  --max_samples 500 \
+  2>&1 | tee logs/train_vit_multiclass_$timestamp.log &

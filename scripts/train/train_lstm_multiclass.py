@@ -1,32 +1,32 @@
 import argparse
 import os
-import random
 import time
 import traceback
-
 from dotenv import load_dotenv
-import matplotlib.pyplot as plt
+import os
 import mlflow
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader, Subset, Dataset
+from torch.utils.data import DataLoader, Subset
 from sklearn.metrics import precision_score, recall_score, f1_score, roc_auc_score
-from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix
 from sklearn.model_selection import StratifiedKFold
-from sklearn.model_selection import StratifiedGroupKFold
+from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix
+import matplotlib.pyplot as plt
 
-from pathlib import Path
-
-from pulmo_datasets.ccccii_dataset import CCCCIIDataset2D
-from utils.download import download_from_blob
+from datasets import CCCCIIDatasetSequence2D
 from utils.log_config import get_custom_logger
+from utils.download import download_from_blob, download_from_blob_with_access_key
+
 my_logger = get_custom_logger('train_lstm_multiclass')
 
+
 class CNN_Net(nn.Module):
-    def __init__(self, num_classes, dropout_rate=0.5):
+    def __init__(self, num_classes, input_height=None, input_width=None, dropout_rate=0.5):
         super(CNN_Net, self).__init__()
+        self.input_height = input_height
+        self.input_width = input_width     
         self.cnn = nn.Sequential(
             nn.Conv2d(1, 32, kernel_size=3, padding=1),
             nn.ReLU(),
@@ -57,6 +57,7 @@ class CNN_Net(nn.Module):
         x = self.fc(embedding)
         return x
 
+
 class LSTM_Net(nn.Module):
     def __init__(self, input_size, hidden_size, num_layers, num_classes, dropout_rate=0.5):
         super(LSTM_Net, self).__init__()
@@ -71,63 +72,8 @@ class LSTM_Net(nn.Module):
         out = self.fc(out)
         return out
 
-class CCCCIIDatasetSequence2D(Dataset):
-    def __init__(self, dataset_folder, sequence_length=30, max_samples=None):
-        self.sequence_length = sequence_length
-        self.dataset_folder = dataset_folder
-        self.max_samples = max_samples
 
-        dataset = CCCCIIDataset2D(dataset_folder, max_samples)
-        data = []
-        for i in range(len(dataset)):
-            slice_image, patient_id, label = dataset[i]
-            data.append((slice_image, patient_id, label))
-        
-        patient_slices = {}
-        patient_labels = {}
-        for slice_image, patient_id, label in data:
-            if patient_id not in patient_slices:
-                patient_slices[patient_id] = []
-                patient_labels[patient_id] = []
-            patient_slices[patient_id].append(slice_image)
-            patient_labels[patient_id].append(label)
-        
-        self.sequences = []
-        self.labels = []
-        for patient_id in patient_slices:
-            slices = patient_slices[patient_id]
-            labels = patient_labels[patient_id]
-            num_slices = len(slices)
-            num_sequences = num_slices // self.sequence_length
-            for i in range(num_sequences):
-                start_idx = i * self.sequence_length
-                end_idx = start_idx + self.sequence_length
-                seq_slices = slices[start_idx:end_idx]
-                seq_labels = labels[start_idx:end_idx]
-                label = max(set(seq_labels), key=seq_labels.count)
-                self.sequences.append(seq_slices)
-                self.labels.append(label)
-            if num_slices % self.sequence_length != 0:
-                seq_slices = slices[-self.sequence_length:]
-                seq_labels = labels[-self.sequence_length:]
-                label = max(set(seq_labels), key=seq_labels.count)
-                self.sequences.append(seq_slices)
-                self.labels.append(label)
-        
-        if self.max_samples is not None:
-            self.sequences = self.sequences[:self.max_samples]
-            self.labels = self.labels[:self.max_samples]
-        
-    def __len__(self):
-        return len(self.sequences)
-    
-    def __getitem__(self, idx):
-        seq_slices = self.sequences[idx]
-        label = self.labels[idx]
-        seq_slices = torch.stack([torch.from_numpy(slice_image) for slice_image in seq_slices])
-        return seq_slices, label
-
-def train_model(train_dataset_loader, val_dataset_loader, num_epochs, learning_rate, cnn_model_path):
+def train_model(train_loader, val_loader, num_epochs, learning_rate, cnn_model_path):
     start_time = time.time()
     my_logger.info('Starting Training')
 
@@ -135,15 +81,19 @@ def train_model(train_dataset_loader, val_dataset_loader, num_epochs, learning_r
     my_logger.info(f'Using device: {device}')
 
     try:
+        # Inicializar e carregar o modelo CNN pré-treinado
         num_classes = 3
+        input_height = 512
+        input_width = 512
         dropout_rate = 0.5
-        cnn_model = CNN_Net(num_classes=num_classes, dropout_rate=dropout_rate)
+        cnn_model = CNN_Net(num_classes, input_height, input_width, dropout_rate=dropout_rate).to(device)    
         cnn_model.load_state_dict(torch.load(cnn_model_path, map_location=device))
         cnn_model.eval()
         cnn_model.to(device)
         for param in cnn_model.parameters():
             param.requires_grad = False
 
+        # Inicializar o modelo LSTM
         input_size = 128
         hidden_size = 128
         num_layers = 1
@@ -160,12 +110,15 @@ def train_model(train_dataset_loader, val_dataset_loader, num_epochs, learning_r
         for epoch in range(num_epochs):
             my_logger.info(f'Starting epoch {epoch + 1}')
 
+            # Fase de treinamento
             lstm_model.train()
+
+            # Inicializar acumuladores de métricas de treinamento
             total_loss = 0
             correct_predictions = 0
             total_samples = 0
 
-            for i, (inputs, labels) in enumerate(train_dataset_loader):
+            for i, (inputs, labels) in enumerate(train_loader):
                 inputs, labels = inputs.to(device), labels.to(device)
                 batch_size, seq_len, channels, height, width = inputs.size()
                 inputs = inputs.view(batch_size * seq_len, channels, height, width)
@@ -184,16 +137,18 @@ def train_model(train_dataset_loader, val_dataset_loader, num_epochs, learning_r
                 correct_predictions += (predictions == labels).sum().item()
                 total_samples += labels.size(0)
 
-                if i % 100 == 0:
+                if i % 5 == 0:
                     batch_accuracy = (predictions == labels).float().mean().item()
-                    my_logger.info(f'Train batch [{i+1}/{len(train_dataset_loader)}], Loss: {loss.item()}, Accuracy: {batch_accuracy}')
-                    mlflow.log_metrics({'running_train_loss': loss.item(), 'running_train_accuracy': batch_accuracy}, step=epoch * len(train_dataset_loader) + i)
+                    my_logger.info(f'Batch [{i+1}/{len(train_loader)}], Loss: {loss.item()}, Accuracy: {batch_accuracy}')
+                    mlflow.log_metrics({'running_train_loss': loss.item(), 'running_train_accuracy': batch_accuracy}, step=epoch * len(train_loader) + i)
 
+            # Calcular e registrar médias de treinamento por época
             train_loss = total_loss / total_samples
             train_accuracy = correct_predictions / total_samples
             mlflow.log_metrics({'train_loss': train_loss, 'train_accuracy': train_accuracy}, step=epoch)
             my_logger.info(f'Epoch [{epoch+1}/{num_epochs}], Training Loss: {train_loss}, Training Accuracy: {train_accuracy}')
 
+            # Fase de validação
             my_logger.info(f'Starting validation phase for epoch {epoch + 1}')
             lstm_model.eval()
             with torch.no_grad():
@@ -203,7 +158,7 @@ def train_model(train_dataset_loader, val_dataset_loader, num_epochs, learning_r
                 all_labels = []
                 all_probabilities = []
 
-                for j, (inputs, labels) in enumerate(val_dataset_loader):
+                for j, (inputs, labels) in enumerate(val_loader):
                     inputs, labels = inputs.to(device), labels.to(device)
                     batch_size, seq_len, channels, height, width = inputs.size()
                     inputs = inputs.view(batch_size * seq_len, channels, height, width)
@@ -218,53 +173,52 @@ def train_model(train_dataset_loader, val_dataset_loader, num_epochs, learning_r
                     total += labels.size(0)
                     correct += (predicted == labels).sum().item()
 
-                    if j % 100 == 0:
-                        batch_accuracy = (predicted == labels).float().mean().item()
-                        my_logger.info(f'Val batch [{j+1}/{len(val_dataset_loader)}], Loss: {loss.item()}, Accuracy: {batch_accuracy}')
-
                     all_labels.extend(labels.cpu().numpy())
                     all_probabilities.extend(probabilities.cpu().numpy())
 
-                val_loss /= total
-                val_accuracy = 100 * correct / total
+            # Calcular métricas de validação
+            val_loss /= total
+            val_accuracy = 100.0 * correct / total
+            val_recall = recall_score(all_labels, np.argmax(all_probabilities, axis=1), average='macro', zero_division=0)
+            val_precision = precision_score(all_labels, np.argmax(all_probabilities, axis=1), average='macro', zero_division=0)
+            val_f1 = f1_score(all_labels, np.argmax(all_probabilities, axis=1), average='macro', zero_division=0)
+            try:
+                val_auc = roc_auc_score(all_labels, all_probabilities, multi_class='ovr')
+            except ValueError:
+                val_auc = 0.0
 
-                val_recall = recall_score(all_labels, np.array(all_probabilities).argmax(axis=1), average='macro', zero_division=0)
-                val_precision = precision_score(all_labels, np.array(all_probabilities).argmax(axis=1), average='macro', zero_division=0)
-                f1 = f1_score(all_labels, np.array(all_probabilities).argmax(axis=1), average='macro', zero_division=0)
-                try:
-                    auc = roc_auc_score(all_labels, all_probabilities, multi_class='ovr')
-                except ValueError as e:
-                    my_logger.error(f'Error calculating AUC: {e}')
-                    auc = 0
+            my_logger.info(f'Validation Loss: {val_loss:.4f}, Validation Accuracy: {val_accuracy:.2f}%, '
+                           f'Recall: {val_recall:.2f}, Precision: {val_precision:.2f}, F1 Score: {val_f1:.2f}, AUC: {val_auc:.2f}')
 
-                my_logger.info(f'Validation Loss: {val_loss:.4f}, Validation Accuracy: {val_accuracy:.2f}%, '
-                               f'Recall: {val_recall:.2f}, Precision: {val_precision:.2f}, F1 Score: {f1:.2f}, AUC: {auc:.2f}')
+            mlflow.log_metric("val_loss", val_loss, step=epoch)
+            mlflow.log_metric("val_accuracy", val_accuracy, step=epoch)
+            mlflow.log_metric("val_recall", val_recall, step=epoch)
+            mlflow.log_metric("val_precision", val_precision, step=epoch)
+            mlflow.log_metric("val_f1_score", val_f1, step=epoch)
+            mlflow.log_metric("val_auc", val_auc, step=epoch)
 
-                mlflow.log_metric("val_loss", val_loss, step=epoch)
-                mlflow.log_metric("val_accuracy", val_accuracy, step=epoch)
-                mlflow.log_metric("val_recall", val_recall, step=epoch)
-                mlflow.log_metric("val_precision", val_precision, step=epoch)
-                mlflow.log_metric("val_f1_score", f1, step=epoch)
-                mlflow.log_metric("val_auc", auc, step=epoch)
+            if val_recall > best_recall:
+                best_recall = val_recall
+                epochs_without_improvement = 0
+                output_dir = './outputs'
+                os.makedirs(output_dir, exist_ok=True)
+                file_prefix = f'lstm_multiclass_{total_samples}smps_{epoch + 1:03}epoch_{learning_rate:.5f}lr_{val_recall:.3f}rec'
+                file_name = f'{file_prefix}.pth'
+                torch.save(lstm_model.state_dict(), f'{output_dir}/{file_name}')
+                my_logger.info(f'New best model saved with recall: {val_recall:.3f}')
 
-                if val_recall > best_recall:
-                    best_recall = val_recall
-                    epochs_without_improvement = 0
-                    output_dir = './outputs'
-                    os.makedirs(output_dir, exist_ok=True)
-                    file_name = f'lstm_multiclass_{total_samples}smps_{epoch + 1}epoch_{learning_rate:.5f}lr_{val_recall:.3f}rec.pth'
-                    torch.save(lstm_model.state_dict(), f'{output_dir}/{file_name}')
-                    my_logger.info(f'New best model saved with recall: {val_recall:.3f}')
+                # Generate and save confusion matrix
+                cm = confusion_matrix(all_labels, np.array(all_probabilities).argmax(axis=1))
+                disp = ConfusionMatrixDisplay(confusion_matrix=cm)
+                disp.plot(cmap=plt.cm.Blues)
+                confusion_matrix_file = f'{output_dir}/{file_prefix}_confusion_matrix.png'
+                plt.savefig(confusion_matrix_file)
 
-                    cm = confusion_matrix(all_labels, np.array(all_probabilities).argmax(axis=1))
-                    disp = ConfusionMatrixDisplay(confusion_matrix=cm)
-                    disp.plot(cmap=plt.cm.Blues)
-                    confusion_matrix_file = f'{output_dir}/confusion_matrix_{epoch+1}.png'
-                    plt.savefig(confusion_matrix_file)
+            else:
+                epochs_without_improvement += 1
 
-                else:
-                    epochs_without_improvement += 1
 
+            # Early stopping
             if epochs_without_improvement >= early_stopping_patience:
                 my_logger.info(f'Early stopping triggered. Last Recall: {val_recall}, Last Precision: {val_precision}, Last Accuracy: {val_accuracy}')
                 break
@@ -278,38 +232,59 @@ def train_model(train_dataset_loader, val_dataset_loader, num_epochs, learning_r
         my_logger.error("Detailed traceback:")
         my_logger.error(traceback.format_exc())
 
+
 def main():
     my_logger.info(f"Torch version: {torch.__version__}")
-    parser = argparse.ArgumentParser(description='Train a model')
-    parser.add_argument("--num_epochs", type=int, help="number of epochs to train")
-    parser.add_argument("--batch_size", type=int, help="batch size")
-    parser.add_argument("--learning_rate", type=float, help="learning rate")
-    parser.add_argument("--k", type=int, help="number of folds for cross-validation")
-    parser.add_argument("--i", type=int, help="current fold index (0-based)")
-    parser.add_argument('--dataset', type=str, help='Dataset name')
+    # Iniciar uma execução no MLflow
+    mlflow.start_run()
+    my_logger.info("MLflow run started")
+
+    # Obter argumentos de linha de comando
+    parser = argparse.ArgumentParser(description='Train a CNN-LSTM multiclass model')
+    parser.add_argument("--num_epochs", type=int, default=20, help="number of epochs to train")
+    parser.add_argument("--batch_size", type=int, default=16, help="batch size")
+    parser.add_argument("--learning_rate", type=float, default=0.0005, help="learning rate")
+    parser.add_argument("--k", type=int, default=5, help="number of folds for cross-validation")
+    parser.add_argument("--i", type=int, default=0, help="current fold index (0-based)")
+    parser.add_argument('--dataset', type=str, default='ccccii', help='Dataset name')
     parser.add_argument('--run_cloud', action='store_true', help='Flag to indicate whether to run in cloud mode')
-    parser.add_argument('--max_samples', type=int, default=None, help='Maximum number of samples to use')
-    parser.add_argument('--cnn_model_path', type=str, help='Path to pretrained CNN model weights')
+    parser.add_argument('--max_samples', type=int, default=0, help='Maximum number of samples to use')
+    parser.add_argument('--cnn_model_path', type=str, default='models/pretrained_cnn.pth', help='Path to pretrained CNN model weights')
     parser.add_argument('--sequence_length', type=int, default=30, help='Sequence length for LSTM input')
 
     args = parser.parse_args()
     my_logger.info(f"Arguments parsed: {args}")
 
-    my_logger.info("Setting dataset variables")
-    dataset = args.dataset
+    my_logger.info(f"Current Working Directory: {os.getcwd()}")
 
-    if not args.run_cloud:
-        my_logger.info(f"Running in local mode, setting dataset folder to 'data/{dataset}'")
-        dataset_folder = f"data/{dataset}"
+    my_logger.info("Setting dataset variables")
+    dataset = args.dataset 
+
+    if not args.run_cloud:        
+        my_logger.info(f"Running in local mode, no need to download dataset and pre-trained model")        
+        dataset_folder = f'data/{dataset}'   
+
     else:
-        my_logger.info("Running in cloud mode, downloading dataset from blob storage")
-        dataset_folder = dataset
+        my_logger.info("Running in cloud mode, downloading dataset and pre-trained model from blob storage")
         load_dotenv()
-        storage_account = os.getenv('AZURE_STORAGE_ACCOUNT')
-        storage_account_key = os.getenv('AZURE_STORAGE_KEY')
-        container_name = os.getenv('BLOB_CONTAINER')
-        my_logger.info(f"Downloading dataset from blob: storage_account={storage_account}, container_name={container_name}")
-        download_from_blob(storage_account, storage_account_key, container_name, dataset_folder)
+
+        try:
+            dataset_folder = dataset
+            storage_account = os.getenv('AZURE_STORAGE_ACCOUNT')
+            storage_account_key = os.getenv('AZURE_STORAGE_KEY')
+            container_name = os.getenv('BLOB_CONTAINER')
+            my_logger.info(f"Downloading dataset from blob: storage_account={storage_account}, container_name={container_name}")
+            download_from_blob(storage_account, storage_account_key, container_name, dataset_folder)
+        except Exception as download_err:
+            my_logger.error(f"Failed to download dataset from storage account: {str(download_err)}")
+
+        try:
+            model_uri= os.getenv('PRETRAINED_CNN_MODEL_URI')        
+            my_logger.info(f"Downloading pre-trained model from blob: storage_account={storage_account}, pre-trained model={model_uri}")
+            download_from_blob_with_access_key(model_uri, storage_account_key, args.cnn_model_path)
+            my_logger.info(f"Model downloaded from AzureML to {args.cnn_model_path}")
+        except Exception as download_err:
+            my_logger.error(f"Failed to download model from storage account: {str(download_err)}")
 
     my_logger.info("Loading dataset")
     sequence_length = args.sequence_length
@@ -339,9 +314,10 @@ def main():
     my_logger.info("Data loaders created")
 
     my_logger.info("Starting model training")
+
     train_model(
-        train_dataset_loader=train_dataset_loader,
-        val_dataset_loader=val_dataset_loader,
+        train_loader=train_dataset_loader,
+        val_loader=val_dataset_loader,
         num_epochs=args.num_epochs,
         learning_rate=args.learning_rate,
         cnn_model_path=args.cnn_model_path
@@ -350,6 +326,7 @@ def main():
 
     mlflow.end_run()
     my_logger.info("MLflow run ended")
+
 
 if __name__ == "__main__":
     main()

@@ -9,6 +9,7 @@ logs/*
 __azurite*.json
 local/
 outputs/
+temp/
 
 # Editors
 .vscode/

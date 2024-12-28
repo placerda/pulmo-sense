@@ -16,11 +16,11 @@ from torch.utils.data import DataLoader, Subset
 
 from dotenv import load_dotenv
 from sklearn.metrics import precision_score, recall_score, f1_score, roc_auc_score, confusion_matrix, ConfusionMatrixDisplay
-from sklearn.model_selection import StratifiedGroupKFold
+from sklearn.model_selection import StratifiedKFold
 
 import matplotlib.pyplot as plt
 
-from pulmo_datasets.ccccii_dataset import CCCCIIDataset2D
+from datasets.ccccii_dataset import CCCCIIDataset2D
 from utils.download import download_from_blob
 from utils.log_config import get_custom_logger
 
@@ -30,15 +30,12 @@ class VGG_Net(nn.Module):
     """
     A simple wrapper around VGG from torchvision.
     We adapt it to single-channel input by repeating the grayscale channel to 3 channels,
-    and then replace the final classifier to match our number of classes = 3.
+    and then replace the final classifier to match our number of classes.
     """
     def __init__(self, num_classes=3):
         super(VGG_Net, self).__init__()
         # Load a pretrained VGG16, for instance
         self.model = models.vgg16_bn(weights=models.VGG16_BN_Weights.IMAGENET1K_V1)
-        
-        # Adjust the first convolution layer to accept 3 channels 
-        # (since we will replicate grayscale to [1 -> 3] below, we keep the default 3).
         
         # Replace the last classifier layer:
         in_features = self.model.classifier[6].in_features
@@ -142,24 +139,28 @@ def train_model(train_loader, val_loader, num_epochs, learning_rate):
             mlflow.log_metric("val_f1_score", val_f1, step=epoch)
             mlflow.log_metric("val_auc", val_auc, step=epoch)
 
+            # File prefix based on parameters
+            file_prefix = f'vgg_multiclass_{epoch+1}epoch_{learning_rate:.5f}lr_{val_recall:.3f}rec'
+            os.makedirs("outputs", exist_ok=True)
+            model_path = f"outputs/{file_prefix}.pth"
+
             # Check for best model
             if val_recall > best_recall:
                 best_recall = val_recall
                 epochs_without_improvement = 0
                 
                 # Save model
-                os.makedirs("outputs", exist_ok=True)
-                model_path = f"outputs/vgg_best_epoch_{epoch+1}_{val_recall:.3f}_rec.pth"
                 torch.save(model.state_dict(), model_path)
-                my_logger.info(f"New best model saved at epoch {epoch+1} with recall={val_recall:.3f}")
+                my_logger.info(f"New best model saved as {model_path} with recall={val_recall:.3f}")
 
                 # Confusion Matrix
                 cm = confusion_matrix(all_labels, val_preds)
                 disp = ConfusionMatrixDisplay(confusion_matrix=cm)
+                cm_path = f"outputs/{file_prefix}_confusion_matrix.png"
                 disp.plot(cmap=plt.cm.Blues)
-                plt.savefig(f"outputs/confusion_matrix_epoch_{epoch+1}.png")
+                plt.savefig(cm_path)
                 plt.close()
-
+                my_logger.info(f"Confusion matrix saved as {cm_path}")
             else:
                 epochs_without_improvement += 1
 
@@ -179,17 +180,19 @@ def main():
     my_logger.info(f"Torch version: {torch.__version__}")
 
     parser = argparse.ArgumentParser(description="Train VGG multiclass model")
-    parser.add_argument("--num_epochs", type=int, help="number of epochs to train")
-    parser.add_argument("--batch_size", type=int, help="batch size")
-    parser.add_argument("--learning_rate", type=float, help="learning rate")
-    parser.add_argument("--k", type=int, help="number of folds for cross-validation")
-    parser.add_argument("--i", type=int, help="current fold index (0-based)")
-    parser.add_argument("--dataset", type=str, help="Dataset name")
+    parser.add_argument("--num_epochs", type=int, default=10, help="number of epochs to train")
+    parser.add_argument("--batch_size", type=int, default=32, help="batch size")
+    parser.add_argument("--learning_rate", type=float, default=0.0005, help="learning rate")
+    parser.add_argument("--k", type=int, default=5, help="number of folds for cross-validation")
+    parser.add_argument("--i", type=int, default=0, help="current fold index (0-based)")
+    parser.add_argument("--dataset", type=str, default='ccccii', help="Dataset name")
     parser.add_argument("--run_cloud", action='store_true', help="Flag to indicate cloud mode")
-    parser.add_argument("--max_samples", type=int, default=None, help="Maximum number of samples to use")
+    parser.add_argument("--max_samples", type=int, default=0, help="Maximum number of samples to use")
 
     args = parser.parse_args()
     my_logger.info(f"Args: {args}")
+
+    my_logger.info(f"Current Working Directory: {os.getcwd()}")
 
     # Possibly start an MLflow run here
     mlflow.start_run()
@@ -207,24 +210,47 @@ def main():
         download_from_blob(storage_account, storage_key, container_name, dataset_folder)
 
     # Prepare dataset
+    my_logger.info("Loading dataset")
     my_dataset = CCCCIIDataset2D(dataset_folder, max_samples=args.max_samples)
-    patient_ids = [sample[1] for sample in my_dataset]  # patient_id
-    labels = [sample[2] for sample in my_dataset]
+    my_logger.info(f"Dataset loaded with a maximum of {args.max_samples} samples")
 
-    # Cross-validation or holdout
-    sgkf = StratifiedGroupKFold(n_splits=args.k, shuffle=True, random_state=42)
-    splits = list(sgkf.split(np.zeros(len(my_dataset)), labels, groups=patient_ids))
+    # Group by patient
+    my_logger.info("Extracting patient IDs and labels")
+    patient_ids = [sample[1] for sample in my_dataset]
+    labels = [sample[2] for sample in my_dataset]  # Extract labels
+
+    # Shuffle patients
+    random.seed(42)
+    combined = list(zip(patient_ids, labels))
+    random.shuffle(combined)
+    patient_ids, labels = zip(*combined)
+    patient_ids = list(patient_ids)
+    labels = list(labels)    
+
+    if args.i < 0 or args.i >= args.k:
+        my_logger.error(f"Invalid fold index 'i': {args.i}. It must be between 0 and {args.k - 1}.")
+        raise ValueError(f"Fold index 'i' must be between 0 and {args.k - 1}, but got {args.i}.")
+
+    my_logger.info(f"Performing Stratified K-Fold with {args.k} splits")
+    skf = StratifiedKFold(n_splits=args.k, shuffle=True, random_state=42)
+    splits = list(skf.split(np.zeros(len(my_dataset)), labels))
 
     train_idx, val_idx = splits[args.i]
-    train_subset = Subset(my_dataset, train_idx)
-    val_subset = Subset(my_dataset, val_idx)
+    my_logger.info(f"Train index: {train_idx[:10]}... ({len(train_idx)} samples)")
+    my_logger.info(f"Val index: {val_idx[:10]}... ({len(val_idx)} samples)")
 
-    train_loader = DataLoader(train_subset, batch_size=args.batch_size, shuffle=True)
-    val_loader = DataLoader(val_subset, batch_size=args.batch_size, shuffle=False)
+    my_logger.info("Creating data loaders")
+    train_dataset = Subset(my_dataset, train_idx)
+    val_dataset = Subset(my_dataset, val_idx)
 
+    train_dataset_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
+    val_dataset_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False)
+    my_logger.info("Data loaders created")
+
+    my_logger.info("Starting model training")
     train_model(
-        train_loader=train_loader,
-        val_loader=val_loader,
+        train_loader=train_dataset_loader,
+        val_loader=val_dataset_loader,
         num_epochs=args.num_epochs,
         learning_rate=args.learning_rate
     )

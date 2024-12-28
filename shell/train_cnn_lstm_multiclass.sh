@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# File: shell/train_cnn_lstm_multiclass.sh
+
 # Source Conda initialization
 source ~/anaconda3/etc/profile.d/conda.sh
 
@@ -15,12 +17,12 @@ mkdir -p logs
 # Set PYTHONPATH and run the Python script
 export PYTHONPATH=$(pwd)
 
-# Run the CNN-LSTM training script locally
 python -m scripts.train.train_cnn_lstm_multiclass \
   --dataset ccccii \
-  --num_epochs 20 \
+  --num_epochs 1 \
   --k 5 \
   --i 0 \
   --batch_size 16 \
   --learning_rate 0.0005 \
-  > logs/train_cnn_lstm_multiclass_${timestamp}.log 2>&1 &
+  --max_samples 50 \
+  2>&1 | tee logs/train_cnn_lstm_multiclass_$timestamp.log &

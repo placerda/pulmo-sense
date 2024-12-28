@@ -7,9 +7,12 @@ logs/
 local/
 input/
 output/
+outputs/
 results/
 *.json
-
+temp/
+mlruns/
+models/
 
 # Editors
 .vscode/

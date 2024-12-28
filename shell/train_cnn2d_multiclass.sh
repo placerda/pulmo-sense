@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# File: shell/train_cnn2d_multiclass.sh
+
 # Source Conda initialization
 source ~/anaconda3/etc/profile.d/conda.sh
 
@@ -22,11 +24,12 @@ mkdir -p logs
 export PYTHONPATH=$(pwd)
 
 # Run the Python script and log to both file and terminal
-python -m scripts.train.train_cnn2d_multiclass_128  \
+python -m scripts.train.train_cnn2d_multiclass \
   --dataset ccccii \
   --num_epochs 1 \
-  --k 2 \
+  --k 5 \
   --i 0 \
-  --batch_size 16 \
+  --batch_size 32 \
   --max_samples 1000 \
-  --learning_rate 0.0005 2>&1 | tee logs/train_cnn2d_multiclass_$timestamp.log &
+  --learning_rate 0.0005 \
+  2>&1 | tee logs/train_cnn2d_multiclass_$timestamp.log &
