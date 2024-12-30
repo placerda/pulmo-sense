@@ -251,7 +251,7 @@ def main():
     parser.add_argument('--max_samples', type=int, default=0, help='Maximum number of samples to use')
     parser.add_argument('--cnn_model_path', type=str, default='models/pretrained_cnn.pth', help='Path to pretrained CNN model weights')
     parser.add_argument('--sequence_length', type=int, default=30, help='Sequence length for LSTM input')
-
+    
     args = parser.parse_args()
     my_logger.info(f"Arguments parsed: {args}")
 
@@ -267,24 +267,27 @@ def main():
     else:
         my_logger.info("Running in cloud mode, downloading dataset and pre-trained model from blob storage")
         load_dotenv()
+        storage_account = os.getenv('AZURE_STORAGE_ACCOUNT')
+        storage_account_key = os.getenv('AZURE_STORAGE_KEY')
+
+        try:
+            model_uri= os.getenv('PRETRAINED_CNN_MODEL_URI')        
+            my_logger.info(f"Downloading pre-trained model from blob: storage_account={storage_account}, pre-trained model={model_uri}")
+            os.makedirs(os.path.dirname(args.cnn_model_path), exist_ok=True)
+            download_from_blob_with_access_key(model_uri, storage_account_key, args.cnn_model_path)
+            my_logger.info(f"Model downloaded from blob to {args.cnn_model_path}")
+        except Exception as download_err:
+            my_logger.error(f"Failed to download model from storage account: {str(download_err)}")
+            exit(-1)
 
         try:
             dataset_folder = dataset
-            storage_account = os.getenv('AZURE_STORAGE_ACCOUNT')
-            storage_account_key = os.getenv('AZURE_STORAGE_KEY')
             container_name = os.getenv('BLOB_CONTAINER')
             my_logger.info(f"Downloading dataset from blob: storage_account={storage_account}, container_name={container_name}")
             download_from_blob(storage_account, storage_account_key, container_name, dataset_folder)
         except Exception as download_err:
             my_logger.error(f"Failed to download dataset from storage account: {str(download_err)}")
-
-        try:
-            model_uri= os.getenv('PRETRAINED_CNN_MODEL_URI')        
-            my_logger.info(f"Downloading pre-trained model from blob: storage_account={storage_account}, pre-trained model={model_uri}")
-            download_from_blob_with_access_key(model_uri, storage_account_key, args.cnn_model_path)
-            my_logger.info(f"Model downloaded from AzureML to {args.cnn_model_path}")
-        except Exception as download_err:
-            my_logger.error(f"Failed to download model from storage account: {str(download_err)}")
+            exit(-1)
 
     my_logger.info("Loading dataset")
     sequence_length = args.sequence_length

@@ -187,7 +187,7 @@ def main():
     parser.add_argument("--i", type=int, default=0, help="current fold index (0-based)")
     parser.add_argument("--dataset", type=str, default='ccccii', help="Dataset name")
     parser.add_argument("--run_cloud", action='store_true', help="Flag to indicate cloud mode")
-    parser.add_argument("--max_samples", type=int, default=None, help="Maximum number of samples to use")
+    parser.add_argument("--max_samples", type=int, default=0, help="Maximum number of samples to use")
 
     args = parser.parse_args()
     my_logger.info(f"Args: {args}")
