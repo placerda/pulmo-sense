@@ -90,11 +90,11 @@ Performance of trained models is summarized below:
 | **3D CNN-LSTM**       | 40.96        | 0.500  | 0.194    | 0.137     | 0.333    |
 
 **Notes**:
-- **VGG** achieved the highest performance across all metrics, indicating its strong ability to generalize and capture relevant features for classification.
-- **LSTM** performed second-best, leveraging the temporal relationships in CT scans effectively.
-- **ViT** demonstrated comparable performance to LSTM, highlighting the potential of attention mechanisms in image classification.
-- **2D CNN** achieved satisfactory results, but it did not outperform models leveraging sequence or attention mechanisms.
-- **3D CNN-LSTM** showed limited performance, suggesting potential issues in capturing spatiotemporal features or the need for further optimization.
+- **VGG** had the best performance, showing strong generalization and feature capture.
+- **LSTM** was second-best, effectively using temporal relationships in CT scans.
+- **ViT** performed similarly to LSTM, showing the potential of attention mechanisms.
+- **2D CNN** had good results but was outperformed by sequence and attention-based models.
+- **3D CNN-LSTM** had limited performance, indicating issues with spatiotemporal feature capture or needing optimization.
 
 ---
 
