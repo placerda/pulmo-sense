@@ -60,7 +60,8 @@ Use the shell scripts in the `shell/` directory to train models. For example:
 bash shell/train_vgg_multiclass.sh
 ```
 
-Alternatively, train models using **Azure Machine Learning** by referencing the notebooks in the `/notebooks` directory. These notebooks include examples for training various models (e.g., CNN, LSTM, VGG, and ViT) using Azure's compute resources.
+> [!Note]
+> Alternatively, train models using **Azure Machine Learning** by referencing the notebooks in the `/notebooks` directory. These notebooks include examples for training various models (e.g., CNN, LSTM, VGG, and ViT) using Azure's compute resources.
 
 ### Adding Custom Models or Datasets
 
@@ -88,12 +89,12 @@ Performance of trained models is summarized below:
 | **2D CNN**            | 92.44        | 0.987  | 0.922    | 0.923     | 0.923    |
 | **3D CNN-LSTM**       | 40.96        | 0.500  | 0.194    | 0.137     | 0.333    |
 
-> [!Note]
-> - **VGG** achieved the highest performance across all metrics, indicating its strong ability to generalize and capture relevant features for classification.
-> - **LSTM** performed second-best, leveraging the temporal relationships in CT scans effectively.
-> - **ViT** demonstrated comparable performance to LSTM, highlighting the potential of attention mechanisms in image classification.
-> - **2D CNN** achieved satisfactory results, but it did not outperform models leveraging sequence or attention mechanisms.
-> - **3D CNN-LSTM** showed limited performance, suggesting potential issues in capturing spatiotemporal features or the need for further optimization.
+**Notes**:
+- **VGG** achieved the highest performance across all metrics, indicating its strong ability to generalize and capture relevant features for classification.
+- **LSTM** performed second-best, leveraging the temporal relationships in CT scans effectively.
+- **ViT** demonstrated comparable performance to LSTM, highlighting the potential of attention mechanisms in image classification.
+- **2D CNN** achieved satisfactory results, but it did not outperform models leveraging sequence or attention mechanisms.
+- **3D CNN-LSTM** showed limited performance, suggesting potential issues in capturing spatiotemporal features or the need for further optimization.
 
 ---
 
