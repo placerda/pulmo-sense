@@ -54,17 +54,19 @@ PulmoSense aims to leverage deep learning to analyze and classify pulmonary path
 
 ### Training Models
 
-To train models, use the shell scripts provided in the `shell/` directory. Example:
+Use the shell scripts in the `shell/` directory to train models. For example:
 
 ```bash
 bash shell/train_vgg_multiclass.sh
 ```
 
+Alternatively, train models using **Azure Machine Learning** by referencing the notebooks in the `/notebooks` directory. These notebooks include examples for training various models (e.g., CNN, LSTM, VGG, and ViT) using Azure's compute resources.
+
 ### Adding Custom Models or Datasets
 
-1. Add a dataset handler in the `datasets/` directory.
-2. Update or create a training script in `scripts/train/`.
-3. Customize shell scripts in `shell/`.
+1. Add a dataset handler to the `datasets/` directory.
+2. Create or modify a training script in `scripts/train/`.
+3. Update the relevant shell scripts in `shell/` as needed.
 
 ---
 
