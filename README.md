@@ -94,7 +94,7 @@ Performance of trained models is summarized below:
 - **LSTM** was second-best, effectively using temporal relationships in CT scans.
 - **ViT** performed similarly to LSTM, showing the potential of attention mechanisms.
 - **2D CNN** had good results but was outperformed by sequence and attention-based models.
-- **3D CNN-LSTM** had limited performance, indicating spatiotemporal feature capture issues or needing optimization.
+- **3D CNN-LSTM** had limited performance, indicating challenges in capturing spatiotemporal features.
 
 ---
 
