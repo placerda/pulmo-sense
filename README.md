@@ -17,7 +17,6 @@ To set up the project, follow these steps:
 
 ## Folder structure
 
-
 1. **`datasets/`**: Contains different dataset classes.
 2. **`models/`**: Contains different model architectures.
 3. **`scripts/`**: Contains training, testing, and prediction (inference) scripts for models, organized into separate subdirectories.
@@ -32,7 +31,6 @@ To set up the project, follow these steps:
 9. **`README.md`**: A markdown file to provide an overview of the project.
 10. **`requirements.txt`**: Lists all the Python packages required to run your project.
 
-
 ## Usage
 
 To reproduce the experiments and execute the classification model, follow the steps detailed in the "Usage" section.
@@ -45,14 +43,40 @@ The datasets used in this research are detailed in [this](DATASET.md) page.
 
 The "Results" section provides a summary of the outcomes from the experiments conducted during this study, particularly those related to the detection of COVID-19 and bacterial pneumonia.
 
-## Running Tests
+### Dataset Details
 
-Run all unit tests from the project's root directory with Python's `unittest` module using the command: `python -m unittest discover -s tests -v`.
+The dataset used in this study includes samples distributed across three classes: Normal, COVID-19, and Non-COVID Pneumonia. Below is a summary of the total volumes and class distribution for different models, along with the train-validation split:
 
-## Contributing
+| Model                  | Total Samples | Class Distribution (Normal/COVID/Non-COVID) | Train Samples | Validation Samples | Network Input      |
+|------------------------|---------------|-----------------------------|---------------|---------------------|--------------------|
+| **VGG**               | 115,260       | 40,410 / 43,470 / 31,380   | 92,208        | 23,052             | 2D                |
+| **ViT**               | 115,260       | 40,410 / 43,470 / 31,380   | 92,208        | 23,052             | 2D                |
+| **2D CNN**            | 115,260       | 40,410 / 43,470 / 31,380   | 92,208        | 23,052             | 2D                |
+| **3D CNN-LSTM**       | 3,842         | 1,347 / 1,449 / 1,046      | 3,073         | 769                | 3D                |
+| **LSTM**              | 3,842         | 1,347 / 1,449 / 1,046      | 3,074         | 768                | Sequence of Features |
 
-Contributions to this project are welcome. Please refer to the guidelines in the [CONTRIBUTING.md] file.
+**Note:** For the CNN-LSTM and LSTM models, the input differs from other architectures. Instead of raw CT slices, these models use sequences representing the central portion of each CT study, comprising 30 slices. For CNN-LSTM, the input is 3D, while for LSTM, the input is a sequence of feature vectors extracted by the 2D CNN model.
+
+### Results Summary
+
+Below is the comparison of the models based on their performance metrics (validation with hold-out):
+
+| Model                  | Accuracy (%) | AUC    | F1 Score | Precision | Recall   |
+|------------------------|--------------|--------|----------|-----------|----------|
+| **VGG**               | 99.08        | 0.999  | 0.990    | 0.990     | 0.991    |
+| **LSTM**              | 94.02        | 0.992  | 0.939    | 0.939     | 0.939    |
+| **ViT**               | 93.74        | 0.992  | 0.936    | 0.937     | 0.937    |
+| **2D CNN**            | 92.44        | 0.987  | 0.922    | 0.923     | 0.923    |
+| **3D CNN-LSTM**       | 40.96        | 0.500  | 0.194    | 0.137     | 0.333    |
+
+### Observations
+
+1. **VGG** achieved the highest performance across all metrics, indicating its strong ability to generalize and capture relevant features for classification.
+2. **LSTM** performed second-best, leveraging the temporal relationships in CT scans effectively.
+3. **ViT** demonstrated comparable performance to LSTM, highlighting the potential of attention mechanisms in image classification.
+4. **2D CNN** achieved satisfactory results, but it did not outperform models leveraging sequence or attention mechanisms.
+5. **3D CNN-LSTM** showed limited performance, suggesting potential issues in capturing spatiotemporal features or the need for further optimization.
 
 ## License
 
-This project is licensed under the [LICENSE] - [License Name].
+This project is licensed under the [LICENSE](https://opensource.org/licenses/MIT) - MIT License.
