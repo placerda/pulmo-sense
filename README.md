@@ -1,10 +1,10 @@
 # PulmoSense: Intelligent Lung Pathology Detection
 
-This repository hosts the code, resources, and documentation for the doctoral research project "PulmoSense". The project focuses on the detection of COVID-19, Pulmonary Fibrosis, Lung Cancer, Community-acquired pneumonia (CAP), and bacterial pneumonia in CT scans using advanced Deep Learning techniques.
+This repository hosts the code, resources, and documentation for the doctoral research project "PulmoSense". The project focuses on the detection of COVID-19 amd Common Pneumonia in CT scans using advanced Deep Learning techniques.
 
 ## Overview
 
-"PulmoSense" is a project that aims to leverage the power of Deep Learning for the detection and classification of pulmonary pathologies in CT scans. The focus is on identifying cases of COVID-19, Pulmonary Fibrosis, Lung Cancer, Community-acquired pneumonia (CAP), and bacterial pneumonia. This repository provides comprehensive instructions to reproduce the experiments and access the datasets used in the study.
+"PulmoSense" is a project that aims to leverage the power of Deep Learning for the detection and classification of pulmonary pathologies in CT scans. The focus is on identifying cases of COVID-19 and Common Pneumonia. This repository provides comprehensive instructions to reproduce the experiments and access the datasets used in the study.
 
 ## Getting Started
 
