@@ -31,9 +31,9 @@ To set up the project, follow these steps:
 9. **`README.md`**: A markdown file to provide an overview of the project.
 10. **`requirements.txt`**: Lists all the Python packages required to run your project.
 
-## Usage
+<!-- ## Usage
 
-To reproduce the experiments and execute the classification model, follow the steps detailed in the "Usage" section.
+To reproduce the experiments and execute the classification model, follow the steps detailed in the "Usage" section. -->
 
 ## Datasets
 
@@ -47,7 +47,7 @@ The "Results" section provides a summary of the outcomes from the experiments co
 
 The dataset used in this study includes samples distributed across three classes: Normal, COVID-19, and Non-COVID Pneumonia. Below is a summary of the total volumes and class distribution for different models, along with the train-validation split:
 
-| Model                  | Total Samples | Class Distribution (Normal/COVID/Non-COVID) | Train Samples | Validation Samples | Network Input      |
+| Model                  | Total Samples | Class Distribution (Normal, COVID-19, Non-COVID Pneumonia) | Train Samples | Validation Samples | Network Input      |
 |------------------------|---------------|-----------------------------|---------------|---------------------|--------------------|
 | **VGG**               | 115,260       | 40,410 / 43,470 / 31,380   | 92,208        | 23,052             | 2D                |
 | **ViT**               | 115,260       | 40,410 / 43,470 / 31,380   | 92,208        | 23,052             | 2D                |
