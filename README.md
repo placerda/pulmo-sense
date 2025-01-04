@@ -81,18 +81,21 @@ Details about datasets, including preparation and usage, are documented in the [
 
 Performance of trained models is summarized below:
 
-| Model                  | Accuracy (%) | AUC    | F1 Score | Precision | Recall   |
-|------------------------|--------------|--------|----------|-----------|----------|
-| **VGG**               | 99.08        | 0.999  | 0.990    | 0.990     | 0.991    |
-| **LSTM**              | 94.02        | 0.992  | 0.939    | 0.939     | 0.939    |
-| **ViT**               | 93.74        | 0.992  | 0.936    | 0.937     | 0.937    |
-| **2D CNN**            | 92.44        | 0.987  | 0.922    | 0.923     | 0.923    |
-| **3D CNN-LSTM**       | 40.96        | 0.500  | 0.194    | 0.137     | 0.333    |
+| Model                           | Accuracy (%) | AUC   | F1 Score | Precision | Recall |
+| ------------------------------- | ------------ | ----- | -------- | --------- | ------ |
+| **VGG**                         | 99.08        | 0.999 | 0.990    | 0.990     | 0.991  |
+| **Attention-based LSTM with 2D CNN features** | 94.67        | 0.994 | 0.946    | 0.946     | 0.946  |
+| **LSTM with 2D CNN features**                 | 94.02        | 0.992 | 0.939    | 0.939     | 0.939  |
+| **ViT**                         | 93.74        | 0.992 | 0.936    | 0.937     | 0.937  |
+| **2D CNN**                      | 92.44        | 0.987 | 0.922    | 0.923     | 0.923  |
+| **3D CNN-LSTM**                 | 40.96        | 0.500 | 0.194    | 0.137     | 0.333  |
 
 **Notes**:
+
 - **VGG** had the best performance, showing strong generalization and feature capture.
-- **LSTM** was second-best, effectively using temporal relationships in CT scans.
-- **ViT** performed similarly to LSTM, showing the potential of attention mechanisms.
+- **Attention-based 2D-CNN LSTM** improved upon the 2D-CNN LSTM by incorporating attention mechanisms, enabling more nuanced feature weighting and enhanced performance.
+- **2D-CNN LSTM** effectively used temporal relationships in CT scans. This approach involves first training a 2D CNN to extract features from each slice. Each feature vector is then used as an element of the sequence input to the LSTM, allowing it to capture dependencies across slices.
+- **ViT** performed similarly to 2D-CNN LSTM, showing the potential of attention mechanisms.
 - **2D CNN** had good results but was outperformed by sequence and attention-based models.
 - **3D CNN-LSTM** had limited performance, indicating challenges in capturing spatiotemporal features.
 
