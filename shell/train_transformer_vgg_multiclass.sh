@@ -17,7 +17,7 @@ mkdir -p logs
 # Set PYTHONPATH and run the Python script
 export PYTHONPATH=$(pwd)
 
-python -m scripts.train.train_lstm_vgg_multiclass \
+python -m scripts.train.train_transformer_vgg_multiclass \
   --dataset ccccii \
   --num_epochs 1 \
   --k 5 \
@@ -27,4 +27,4 @@ python -m scripts.train.train_lstm_vgg_multiclass \
   --vgg_model_path "models/vgg_multiclass_19epoch_0.00050lr_0.991rec.pth" \
   --max_samples 500 \
   --sequence_length 30 \
-  2>&1 | tee logs/lstm_vgg_multiclass_$timestamp.log &
+  2>&1 | tee logs/transformer_vgg_multiclass_$timestamp.log &
