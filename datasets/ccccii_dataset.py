@@ -1,11 +1,10 @@
 import os
-import torch
-from torch.utils.data import Dataset
-from PIL import Image
-import numpy as np
-import os
 import random
 from collections import Counter
+from PIL import Image
+import numpy as np
+import torch
+from torch.utils.data import Dataset
 from utils.log_config import get_custom_logger
 
 my_logger = get_custom_logger('ccccii_dataset')
@@ -113,17 +112,113 @@ class CCCCIIDataset2D(Dataset):
         # Return the image, patient ID, and the label
         return img, torch.tensor(patient_id).long(), torch.tensor(label).long()
 
+class CCCCIIDataset2DBinary(Dataset):
+    def __init__(self, root_dir, transform=None, max_samples=0):
+        """
+        A binary dataset class that uses only NCP and Normal classes.
+        
+        :param root_dir: Path to the root directory containing the subfolders 'NCP' and 'Normal'.
+        :param transform: Optional transform to be applied on each image slice.
+        :param max_samples: Maximum number of samples to load. If 0, all samples are loaded.
+        """
+        self.root_dir = root_dir
+        self.transform = transform
+        # Only include binary classes: NCP and Normal
+        self.classes = {'NCP': 0, 'Normal': 1}
+        self.num_classes = len(self.classes)
+        self.max_samples = max_samples
+        
+        my_logger.info(f"CCCCIIDataset2DBinary: Dataset initialized with root_dir: {self.root_dir}")
+        my_logger.info(f"CCCCIIDataset2DBinary: Transform: {self.transform}")
+        my_logger.info(f"CCCCIIDataset2DBinary: Max samples: {self.max_samples}")
+        my_logger.info(f"CCCCIIDataset2DBinary: Number of classes: {self.num_classes}")
+        my_logger.info(f"CCCCIIDataset2DBinary: Labels : {self.classes}")
+        
+        self.data = self._gather_data()
 
-import os
-import torch
-from torch.utils.data import Dataset
-from PIL import Image
-import numpy as np
-import random
-from collections import Counter
-from utils.log_config import get_custom_logger
+    def _gather_data(self):
+        data = []
+        patient_list = []
+        sample_counts = {class_idx: 0 for class_idx in self.classes.values()}  # Initialize counters per class
 
-my_logger = get_custom_logger('ccciiidataset')
+        my_logger.info(f"CCCCIIDataset2DBinary: Current working directory: {os.getcwd()}")
+        my_logger.info(f"CCCCIIDataset2DBinary: Contents of root directory ({self.root_dir}): {os.listdir(self.root_dir)}")
+
+        # Only process the two classes: NCP and Normal
+        for label, class_idx in self.classes.items():
+            class_dir = os.path.join(self.root_dir, label)
+            patients = os.listdir(class_dir)
+            for patient_id in patients:
+                patient_dir = os.path.join(class_dir, patient_id)
+                for scan_folder in os.listdir(patient_dir):
+                    scan_path = os.path.join(patient_dir, scan_folder)
+                    slices = os.listdir(scan_path)
+                    # Only use scans with at least 30 slices
+                    if len(slices) >= 30:
+                        patient_list.append((scan_path, class_idx))
+
+        random.seed(42)  # For reproducibility
+        random.shuffle(patient_list)
+
+        count = 0
+        for scan_path, class_idx in patient_list:
+            slices = sorted(os.listdir(scan_path))
+            num_slices = len(slices)
+            # Calculate indices for the central 30 slices
+            start_idx = max(0, (num_slices - 30) // 2)
+            end_idx = start_idx + 30
+            end_idx = min(end_idx, num_slices)  # Avoid going out of bounds
+
+            for slice_idx in range(start_idx, end_idx):
+                data.append((scan_path, slice_idx, class_idx))
+                sample_counts[class_idx] += 1
+                count += 1
+                if self.max_samples > 0 and count >= self.max_samples:
+                    my_logger.info(f"CCCCIIDataset2DBinary: Total samples : {len(data)}")
+                    my_logger.info(f"CCCCIIDataset2DBinary: Samples per class : {sample_counts}")
+                    return data
+
+        my_logger.info(f"CCCCIIDataset2DBinary: Total samples : {len(data)}")
+        my_logger.info(f"CCCCIIDataset2DBinary: Samples per class : {sample_counts}")
+        return data
+
+    def __len__(self):
+        return len(self.data)
+
+    def _load_scan(self, scan_path, slice_idx):
+        slice_files = sorted(os.listdir(scan_path))
+        slice_file = slice_files[slice_idx]
+        slice_path = os.path.join(scan_path, slice_file)
+        img = Image.open(slice_path).convert('L')  # Convert image to grayscale
+        img = img.resize((512, 512))  # Resize image
+        img = np.array(img).astype(np.float32)
+        mean = np.mean(img)
+        std = np.std(img)
+        if std > 0:
+            img = (img - mean) / std  # Normalize if std is non-zero
+        else:
+            my_logger.info(f"CCCCIIDataset2DBinary: Image with zero std encountered: {scan_path} - slice {slice_idx}")
+            img = img - mean
+        return img
+
+    def _extract_patient_id(self, scan_path):
+        # Extract the patient ID from the directory structure (assumes patient directory is the immediate parent)
+        patient_id = os.path.basename(os.path.dirname(scan_path))
+        return int(patient_id)
+
+    def __getitem__(self, idx):
+        scan_path, slice_idx, label = self.data[idx]
+        img = self._load_scan(scan_path, slice_idx)
+        patient_id = self._extract_patient_id(scan_path)
+
+        if self.transform:
+            img = self.transform(img)
+        
+        # Ensure image shape is (1, 512, 512) by adding the channel dimension
+        img = torch.tensor(img).unsqueeze(0)
+        
+        # Return image, patient ID, and label as tensors
+        return img, torch.tensor(patient_id).long(), torch.tensor(label).long()
 
 class CCCIIIDataset3D(Dataset):
     def __init__(self, root_dir, transform=None, max_samples=0):
@@ -274,8 +369,6 @@ class CCCIIIDataset3D(Dataset):
         volume = torch.tensor(volume).unsqueeze(0)  # shape: (1, 30, 512, 512)
 
         return volume, torch.tensor(patient_id).long(), torch.tensor(label).long()
-
-
 
 class CCCCIIDatasetSequence2D(Dataset):
     def __init__(self, dataset_folder, sequence_length=30, max_samples=None):
