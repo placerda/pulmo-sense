@@ -17,6 +17,7 @@ inference-schema
 ipykernel~=6.0
 MarkupSafe==2.1.2
 matplotlib~=3.5.0
+opencv-python>=4.5.5.64
 numpy
 psutil~=5.8.0
 py-cpuinfo==5.0.0
