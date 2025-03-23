@@ -1,4 +1,12 @@
-# File: scripts/train/train_vit_binary.py
+#!/usr/bin/env python
+"""
+Train Vision Transformer binary model
+
+This script uses a pretrained Vision Transformer (ViT) model from timm
+for binary classification. It handles single–channel input by replicating it
+to 3 channels, resizes the image, and performs training using the binary
+dataset. The positive class is assumed to be labeled as 0.
+"""
 
 import argparse
 import os
@@ -87,7 +95,7 @@ def train_model(train_loader, val_loader, num_epochs, learning_rate):
                 if i % 50 == 0:
                     batch_acc = (preds == labels).float().mean().item()
                     my_logger.info(f"[Train] Batch {i}/{len(train_loader)}: Loss={loss.item():.4f}, Acc={batch_acc:.4f}")
-
+            
             train_loss = total_loss / total
             train_acc = 100.0 * correct / total
 
@@ -117,17 +125,20 @@ def train_model(train_loader, val_loader, num_epochs, learning_rate):
 
             val_loss /= val_total
             val_acc = 100.0 * val_correct / val_total
+            all_probs = np.array(all_probs)
             val_preds = np.argmax(all_probs, axis=1)
 
-            # Compute binary metrics
+            # Compute binary metrics using the positive class as label 0.
             val_recall = recall_score(all_labels, val_preds, average='binary', zero_division=0)
             val_precision = precision_score(all_labels, val_preds, average='binary', zero_division=0)
             val_f1 = f1_score(all_labels, val_preds, average='binary', zero_division=0)
             try:
-                # Use probability of positive class for ROC AUC
-                positive_probs = np.array(all_probs)[:, 1]
-                val_auc = roc_auc_score(all_labels, positive_probs)
-            except ValueError:
+                # IMPORTANT: For binary classification the positive class is label 0.
+                positive_probs = all_probs[:, 0]
+                val_auc = roc_auc_score(all_labels, positive_probs, pos_label=0)
+                my_logger.info("AUC computed using positive class probabilities (index 0).")
+            except ValueError as e:
+                my_logger.error("Error computing AUC: %s", e)
                 val_auc = 0.0
 
             my_logger.info(
@@ -156,7 +167,7 @@ def train_model(train_loader, val_loader, num_epochs, learning_rate):
                 # Save confusion matrix plot
                 cm = confusion_matrix(all_labels, val_preds)
                 disp = ConfusionMatrixDisplay(confusion_matrix=cm)
-                cm_path = f"outputs/{file_prefix}_confusion_matrix.png"
+                cm_path = f"outputs/{file_prefix}_confmat.png"
                 disp.plot(cmap=plt.cm.Blues)
                 plt.savefig(cm_path)
                 plt.close()
@@ -208,7 +219,6 @@ def main():
         download_from_blob(storage_account, storage_key, container_name, dataset_folder)
 
     my_logger.info("Loading dataset")
-    # Use the binary dataset class
     my_dataset = CCCCIIDataset2DBinary(dataset_folder, max_samples=args.max_samples)
     my_logger.info(f"Dataset loaded with a maximum of {args.max_samples} samples")
 
@@ -244,14 +254,9 @@ def main():
     my_logger.info("Data loaders created")
 
     my_logger.info("Starting model training")
-    train_model(
-        train_loader=train_loader,
-        val_loader=val_loader,
-        num_epochs=args.num_epochs,
-        learning_rate=args.learning_rate
-    )
-
+    train_model(train_loader, val_loader, args.num_epochs, args.learning_rate, args.cnn_model_path)
     mlflow.end_run()
+    my_logger.info("MLflow run ended")
 
 if __name__ == "__main__":
     main()

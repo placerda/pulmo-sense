@@ -48,7 +48,7 @@ class VGGFeatureExtractor(nn.Module):
         self.embedding_dim = in_features
 
     def forward(self, x):
-        # x: [batch, 1, H, W] -> repeat to 3 channels and resize
+        # x: [batch, 1, H, W] -> repeat to 3 channels and resize to 224x224
         x = x.repeat(1, 3, 1, 1)
         x = nn.functional.interpolate(x, size=(224, 224), mode='bilinear', align_corners=False)
         features = self.vgg(x)  # expected shape: [batch, embedding_dim]
@@ -130,7 +130,7 @@ def train_model(train_loader, val_loader, num_epochs, learning_rate, vgg_model_p
                 # Flatten to process each slice through VGG independently
                 inputs = inputs.view(bsz * seq_len, ch, h, w)
                 with torch.no_grad():
-                    vgg_features = feature_extractor(inputs)
+                    vgg_features = feature_extractor(inputs)  # [bsz*seq_len, embedding_dim]
                 vgg_features = vgg_features.view(bsz, seq_len, -1)
                 outputs, attn_weights = attn_lstm_model(vgg_features)
                 loss = criterion(outputs, labels)
@@ -179,15 +179,28 @@ def train_model(train_loader, val_loader, num_epochs, learning_rate, vgg_model_p
                     all_probs.extend(probabilities.cpu().numpy())
             val_loss /= total
             val_accuracy = 100.0 * correct / total
-            val_recall = recall_score(all_labels, np.argmax(all_probs, axis=1), average='macro', zero_division=0)
-            val_precision = precision_score(all_labels, np.argmax(all_probs, axis=1), average='macro', zero_division=0)
-            val_f1 = f1_score(all_labels, np.argmax(all_probs, axis=1), average='macro', zero_division=0)
+
+            # IMPORTANT: For binary classification the positive class is the one with label 0.
+            # Extract probability for class 0 and compute ROC AUC with pos_label=0.
+            all_probs = np.array(all_probs)
+            positive_probs = all_probs[:, 0]
             try:
-                val_auc = roc_auc_score(all_labels, all_probs, multi_class='ovr')
-            except ValueError:
+                val_auc = roc_auc_score(all_labels, positive_probs)
+                my_logger.info("AUC computed using positive class probabilities (index 0).")
+            except ValueError as e:
+                my_logger.error("Error computing AUC: %s", e)
                 val_auc = 0.0
-            my_logger.info(f'Epoch {epoch+1} Validation: Loss={val_loss:.4f}, Acc={val_accuracy:.2f}%, '
-                           f'Recall={val_recall:.2f}, Precision={val_precision:.2f}, F1={val_f1:.2f}, AUC={val_auc:.2f}')
+
+            # For recall, precision, f1 we can use binary averaging
+            val_preds = np.argmax(all_probs, axis=1)
+            val_recall = recall_score(all_labels, val_preds, average='binary', zero_division=0)
+            val_precision = precision_score(all_labels, val_preds, average='binary', zero_division=0)
+            val_f1 = f1_score(all_labels, val_preds, average='binary', zero_division=0)
+
+            my_logger.info(
+                f'Epoch {epoch+1} Validation: Loss={val_loss:.4f}, Acc={val_accuracy:.2f}%, '
+                f'Recall={val_recall:.2f}, Precision={val_precision:.2f}, F1={val_f1:.2f}, AUC={val_auc:.2f}'
+            )
             mlflow.log_metric("val_loss", val_loss, step=epoch)
             mlflow.log_metric("val_accuracy", val_accuracy, step=epoch)
             mlflow.log_metric("val_recall", val_recall, step=epoch)
@@ -278,6 +291,7 @@ def main():
     val_dataset = Subset(my_dataset, val_idx)
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False)
+    my_logger.info("Data loaders created")
     my_logger.info("Starting model training")
     train_model(train_loader, val_loader, args.num_epochs, args.learning_rate, args.cnn_model_path)
     mlflow.end_run()

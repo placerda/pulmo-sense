@@ -1,8 +1,11 @@
 #!/usr/bin/env python
 """
-Train VGG Binary Model
+Train Vision Transformer binary model
 
-This script trains a VGG model for binary classification.
+This script uses a pretrained Vision Transformer (ViT) model from timm
+for binary classification. It handles single–channel input by replicating it
+to 3 channels, resizes the image, and performs training using the binary
+dataset. The positive class is assumed to be labeled as 0.
 """
 
 import argparse
@@ -16,7 +19,10 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torchvision.models as models
+
+# For Vision Transformer via timm
+import timm
+
 from torch.utils.data import DataLoader, Subset
 
 from dotenv import load_dotenv
@@ -25,58 +31,57 @@ from sklearn.model_selection import StratifiedKFold
 
 import matplotlib.pyplot as plt
 
+# Use the binary dataset class
 from datasets.ccccii_dataset import CCCCIIDataset2DBinary
 from utils.download import download_from_blob
 from utils.log_config import get_custom_logger
 
-my_logger = get_custom_logger('train_vgg_binary')
+my_logger = get_custom_logger('train_vit_binary')
 
-class VGG_Net(nn.Module):
+class ViTModel(nn.Module):
     """
-    A simple wrapper around VGG from torchvision.
-    Adapted for binary classification.
+    A simple Vision Transformer model using timm.
+    We handle single-channel input by repeating it to 3 channels,
+    then resize to the patch size expected by the pretrained model.
     """
-    def __init__(self, num_classes=2):
-        super(VGG_Net, self).__init__()
-        # Load pretrained VGG16 with batch normalization
-        self.model = models.vgg16_bn(weights=models.VGG16_BN_Weights.IMAGENET1K_V1)
-        # Replace the final classifier layer with a binary classifier
-        in_features = self.model.classifier[6].in_features
-        self.model.classifier[6] = nn.Linear(in_features, num_classes)
+    def __init__(self, num_classes=2, model_name='vit_base_patch16_224'):
+        super(ViTModel, self).__init__()
+        self.model = timm.create_model(model_name, pretrained=True, num_classes=num_classes)
     
     def forward(self, x):
-        # Input x is shape [batch_size, 1, 512, 512].
-        # Repeat channel dimension to convert to 3 channels.
+        # x: [batch_size, 1, 512, 512] => replicate to 3 channels
         x = x.repeat(1, 3, 1, 1)
+        # Resize to (224,224) to fit model input requirements
+        x = torch.nn.functional.interpolate(x, size=(224, 224), mode='bilinear', align_corners=False)
         return self.model(x)
 
 def train_model(train_loader, val_loader, num_epochs, learning_rate):
     start_time = time.time()
-    my_logger.info('Starting VGG binary training')
+    my_logger.info("Starting Vision Transformer binary training")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    my_logger.info(f'Using device: {device}')
+    my_logger.info(f"Using device: {device}")
 
     try:
-        model = VGG_Net(num_classes=2).to(device)
+        # Instantiate the ViT model for binary classification
+        model = ViTModel(num_classes=2).to(device)
         criterion = nn.CrossEntropyLoss()
         optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-5)
-        
+
         early_stopping_patience = 3
         epochs_without_improvement = 0
         best_recall = 0.0
 
         for epoch in range(num_epochs):
-            my_logger.info(f'=== Epoch {epoch+1}/{num_epochs} ===')
+            my_logger.info(f"=== Epoch {epoch+1}/{num_epochs} ===")
 
-            # ========== TRAINING ==========
+            # ========= TRAINING =========
             model.train()
             total_loss, correct, total = 0, 0, 0
 
             for i, (inputs, _, labels) in enumerate(train_loader):
                 inputs, labels = inputs.to(device), labels.to(device)
                 outputs = model(inputs)
-                
                 loss = criterion(outputs, labels)
                 optimizer.zero_grad()
                 loss.backward()
@@ -89,16 +94,16 @@ def train_model(train_loader, val_loader, num_epochs, learning_rate):
 
                 if i % 50 == 0:
                     batch_acc = (preds == labels).float().mean().item()
-                    my_logger.info(f'[Train] Batch {i}/{len(train_loader)} - Loss: {loss.item():.4f}, Acc: {batch_acc:.4f}')
+                    my_logger.info(f"[Train] Batch {i}/{len(train_loader)}: Loss={loss.item():.4f}, Acc={batch_acc:.4f}")
             
             train_loss = total_loss / total
             train_acc = 100.0 * correct / total
 
-            my_logger.info(f'Epoch {epoch+1}: Train Loss={train_loss:.4f}, Train Acc={train_acc:.2f}%')
+            my_logger.info(f"Epoch {epoch+1}: Train Loss={train_loss:.4f}, Train Acc={train_acc:.2f}%")
             mlflow.log_metric("train_loss", train_loss, step=epoch)
             mlflow.log_metric("train_accuracy", train_acc, step=epoch)
 
-            # ========== VALIDATION ==========
+            # ========= VALIDATION =========
             model.eval()
             val_loss, val_correct, val_total = 0, 0, 0
             all_labels, all_probs = [], []
@@ -123,22 +128,23 @@ def train_model(train_loader, val_loader, num_epochs, learning_rate):
             all_probs = np.array(all_probs)
             val_preds = np.argmax(all_probs, axis=1)
 
-            # Compute binary metrics using 'binary' averaging.
-            # IMPORTANT: The positive class is the one with value 0, so we use column index 0.
-            val_recall = recall_score(all_labels, val_preds, average='binary', zero_division=0)
-            val_precision = precision_score(all_labels, val_preds, average='binary', zero_division=0)
-            val_f1 = f1_score(all_labels, val_preds, average='binary', zero_division=0)
+            # IMPORTANT: For binary classification, the positive class is encoded as 0.
+            # So we extract the probability of class 0 and specify pos_label=0.
             try:
                 positive_probs = all_probs[:, 0]
-                val_auc = roc_auc_score(all_labels, positive_probs)
-                my_logger.info("AUC computed using positive class probabilities (index 0).")
+                val_auc = roc_auc_score(all_labels, positive_probs, pos_label=0)
+                my_logger.info("AUC computed using positive class probabilities (index 0, pos_label=0).")
             except ValueError as e:
                 my_logger.error("Error computing AUC: %s", e)
                 val_auc = 0.0
 
+            val_recall = recall_score(all_labels, val_preds, average='binary', zero_division=0)
+            val_precision = precision_score(all_labels, val_preds, average='binary', zero_division=0)
+            val_f1 = f1_score(all_labels, val_preds, average='binary', zero_division=0)
+
             my_logger.info(
-                f'Epoch {epoch+1} Validation: Loss={val_loss:.4f}, Acc={val_acc:.2f}%, '
-                f'Recall={val_recall:.2f}, Precision={val_precision:.2f}, F1={val_f1:.2f}, AUC={val_auc:.2f}'
+                f"Val Loss={val_loss:.4f}, Acc={val_acc:.2f}%, Recall={val_recall:.2f}, "
+                f"Precision={val_precision:.2f}, F1={val_f1:.2f}, AUC={val_auc:.2f}"
             )
 
             mlflow.log_metric("val_loss", val_loss, step=epoch)
@@ -148,7 +154,7 @@ def train_model(train_loader, val_loader, num_epochs, learning_rate):
             mlflow.log_metric("val_f1_score", val_f1, step=epoch)
             mlflow.log_metric("val_auc", val_auc, step=epoch)
 
-            file_prefix = f'vgg_binary_{epoch+1}epoch_{learning_rate:.5f}lr_{val_recall:.3f}rec'
+            file_prefix = f"vit_binary_{epoch+1}epoch_{learning_rate:.5f}lr_{val_recall:.3f}rec"
             os.makedirs("outputs", exist_ok=True)
             model_path = f"outputs/{file_prefix}.pth"
 
@@ -173,7 +179,7 @@ def train_model(train_loader, val_loader, num_epochs, learning_rate):
                 my_logger.info("Early stopping triggered.")
                 break
 
-        my_logger.info("Finished Training VGG binary model.")
+        my_logger.info("Finished Training Vision Transformer binary model.")
         my_logger.info(f"Total training time: {time.time() - start_time:.2f} seconds")
 
     except Exception as e:
@@ -183,14 +189,14 @@ def train_model(train_loader, val_loader, num_epochs, learning_rate):
 def main():
     my_logger.info(f"Torch version: {torch.__version__}")
 
-    parser = argparse.ArgumentParser(description="Train VGG binary model")
-    parser.add_argument("--num_epochs", type=int, default=10, help="number of epochs to train")
-    parser.add_argument("--batch_size", type=int, default=32, help="batch size")
+    parser = argparse.ArgumentParser(description="Train Vision Transformer binary model")
+    parser.add_argument("--num_epochs", type=int, default=20, help="number of epochs to train")
+    parser.add_argument("--batch_size", type=int, default=16, help="batch size")
     parser.add_argument("--learning_rate", type=float, default=0.0005, help="learning rate")
     parser.add_argument("--k", type=int, default=5, help="number of folds for cross-validation")
     parser.add_argument("--i", type=int, default=0, help="current fold index (0-based)")
-    parser.add_argument("--dataset", type=str, default='ccccii', help="Dataset name")
-    parser.add_argument("--run_cloud", action='store_true', help="Flag to indicate cloud mode")
+    parser.add_argument("--dataset", type=str, default="ccccii", help="Dataset name")
+    parser.add_argument("--run_cloud", action="store_true", help="Flag to indicate cloud mode")
     parser.add_argument("--max_samples", type=int, default=0, help="Maximum number of samples to use")
 
     args = parser.parse_args()
@@ -247,7 +253,8 @@ def main():
     my_logger.info("Data loaders created")
 
     my_logger.info("Starting model training")
-    train_model(train_loader, val_loader, num_epochs=args.num_epochs, learning_rate=args.learning_rate)
+    train_model(train_loader, val_loader, args.num_epochs, args.learning_rate, args.vgg_model_path)
+    my_logger.info("Model training completed")
 
     mlflow.end_run()
     my_logger.info("MLflow run ended")
