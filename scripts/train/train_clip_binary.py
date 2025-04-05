@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 """
-Train Vision Transformer binary model
+Train CLIP-based binary model
 
-This script uses a pretrained Vision Transformer (ViT) model from timm
-for binary classification. It handles single–channel input by replicating it
-to 3 channels, resizes the image, and performs training using the binary
-dataset. The positive class is assumed to be labeled as 0.
+This script uses a pretrained CLIP model (openai/clip-vit-base-patch32) from Hugging Face Transformers
+for binary classification. It handles single–channel input by replicating it to 3 channels,
+resizes the image to (224,224), and performs training using the binary dataset.
+The positive class is assumed to be labeled as 0.
 """
 
 import argparse
@@ -20,11 +20,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-# For Vision Transformer via timm
-import timm
-
 from torch.utils.data import DataLoader, Subset
-
 from dotenv import load_dotenv
 from sklearn.metrics import precision_score, recall_score, f1_score, confusion_matrix, ConfusionMatrixDisplay
 from sklearn.metrics import roc_curve, auc
@@ -32,40 +28,49 @@ from sklearn.model_selection import StratifiedKFold
 
 import matplotlib.pyplot as plt
 
-# Use the binary dataset class
 from datasets.ccccii_dataset import CCCCIIDataset2DBinary
 from utils.download import download_from_blob
 from utils.log_config import get_custom_logger
 
-my_logger = get_custom_logger('train_vit_binary')
+from transformers import CLIPModel
 
-class ViTModel(nn.Module):
+my_logger = get_custom_logger('train_clip_binary')
+
+class CLIPBinaryModel(nn.Module):
     """
-    A simple Vision Transformer model using timm.
-    We handle single-channel input by repeating it to 3 channels,
-    then resize to the patch size expected by the pretrained model.
+    A binary classifier using the pretrained CLIP image encoder.
+    It replicates single-channel input to 3 channels, resizes the image to (224,224),
+    passes it through the CLIP vision model, and then applies a classification head.
     """
-    def __init__(self, num_classes=2, model_name='vit_base_patch16_224'):
-        super(ViTModel, self).__init__()
-        self.model = timm.create_model(model_name, pretrained=True, num_classes=num_classes)
+    def __init__(self, num_classes=2, model_name="openai/clip-vit-base-patch32"):
+        super(CLIPBinaryModel, self).__init__()
+        self.clip = CLIPModel.from_pretrained(model_name)
+        # Optionally, freeze the CLIP vision encoder for faster training:
+        # for param in self.clip.vision_model.parameters():
+        #     param.requires_grad = False
+        hidden_size = self.clip.config.vision_hidden_size
+        self.classifier = nn.Linear(hidden_size, num_classes)
     
     def forward(self, x):
         # x: [batch_size, 1, 512, 512] => replicate to 3 channels
         x = x.repeat(1, 3, 1, 1)
-        # Resize to (224,224) to fit model input requirements
+        # Resize to (224,224)
         x = torch.nn.functional.interpolate(x, size=(224, 224), mode='bilinear', align_corners=False)
-        return self.model(x)
+        # Pass through CLIP's vision model; note that the vision model expects a key "pixel_values"
+        vision_outputs = self.clip.vision_model(pixel_values=x)
+        pooled_output = vision_outputs.pooler_output  # shape: (batch, hidden_size)
+        logits = self.classifier(pooled_output)
+        return logits
 
 def train_model(train_loader, val_loader, num_epochs, learning_rate):
     start_time = time.time()
-    my_logger.info("Starting Vision Transformer binary training")
+    my_logger.info("Starting CLIP binary training")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     my_logger.info(f"Using device: {device}")
 
     try:
-        # Instantiate the ViT model for binary classification
-        model = ViTModel(num_classes=2).to(device)
+        model = CLIPBinaryModel(num_classes=2).to(device)
         criterion = nn.CrossEntropyLoss()
         optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-5)
 
@@ -75,8 +80,6 @@ def train_model(train_loader, val_loader, num_epochs, learning_rate):
 
         for epoch in range(num_epochs):
             my_logger.info(f"=== Epoch {epoch+1}/{num_epochs} ===")
-
-            # ========= TRAINING =========
             model.train()
             total_loss, correct, total = 0, 0, 0
 
@@ -104,7 +107,6 @@ def train_model(train_loader, val_loader, num_epochs, learning_rate):
             mlflow.log_metric("train_loss", train_loss, step=epoch)
             mlflow.log_metric("train_accuracy", train_acc, step=epoch)
 
-            # ========= VALIDATION =========
             model.eval()
             val_loss, val_correct, val_total = 0, 0, 0
             all_labels, all_probs = [], []
@@ -114,7 +116,6 @@ def train_model(train_loader, val_loader, num_epochs, learning_rate):
                     inputs, labels = inputs.to(device), labels.to(device)
                     outputs = model(inputs)
                     loss = criterion(outputs, labels)
-
                     val_loss += loss.item() * labels.size(0)
                     probs = torch.softmax(outputs, dim=1)
                     preds = probs.argmax(dim=1)
@@ -129,12 +130,11 @@ def train_model(train_loader, val_loader, num_epochs, learning_rate):
             all_probs = np.array(all_probs)
             val_preds = np.argmax(all_probs, axis=1)
 
-            # Compute binary metrics using the positive class as label 0.
             val_recall = recall_score(all_labels, val_preds, average='binary', zero_division=0)
             val_precision = precision_score(all_labels, val_preds, average='binary', zero_division=0)
             val_f1 = f1_score(all_labels, val_preds, average='binary', zero_division=0)
             try:
-                positive_probs = all_probs[:, 0]  # Probability of class 0 (positive)
+                positive_probs = all_probs[:, 0]
                 fpr, tpr, _ = roc_curve(all_labels, positive_probs, pos_label=0)
                 val_auc = auc(fpr, tpr)
                 my_logger.info("AUC computed using roc_curve with pos_label=0.")
@@ -154,8 +154,7 @@ def train_model(train_loader, val_loader, num_epochs, learning_rate):
             mlflow.log_metric("val_f1_score", val_f1, step=epoch)
             mlflow.log_metric("val_auc", val_auc, step=epoch)
 
-            # Save model if improved based on recall
-            file_prefix = f"vit_binary_{epoch+1}epoch_{learning_rate:.5f}lr_{val_recall:.3f}rec"
+            file_prefix = f"clip_binary_{epoch+1}epoch_{learning_rate:.5f}lr_{val_recall:.3f}rec"
             os.makedirs("outputs", exist_ok=True)
             model_path = f"outputs/{file_prefix}.pth"
 
@@ -165,7 +164,6 @@ def train_model(train_loader, val_loader, num_epochs, learning_rate):
                 torch.save(model.state_dict(), model_path)
                 my_logger.info(f"New best model saved as {model_path} with recall={val_recall:.3f}")
 
-                # Save confusion matrix plot
                 cm = confusion_matrix(all_labels, val_preds)
                 disp = ConfusionMatrixDisplay(confusion_matrix=cm)
                 cm_path = f"outputs/{file_prefix}_confmat.png"
@@ -180,9 +178,8 @@ def train_model(train_loader, val_loader, num_epochs, learning_rate):
                 my_logger.info("Early stopping triggered.")
                 break
 
-        my_logger.info("Finished Training Vision Transformer binary model.")
+        my_logger.info("Finished Training CLIP binary model.")
         my_logger.info(f"Total training time: {time.time() - start_time:.2f} seconds")
-
     except Exception as e:
         my_logger.error("Error during training: %s", str(e))
         my_logger.error(traceback.format_exc())
@@ -190,7 +187,7 @@ def train_model(train_loader, val_loader, num_epochs, learning_rate):
 def main():
     my_logger.info(f"Torch version: {torch.__version__}")
 
-    parser = argparse.ArgumentParser(description="Train Vision Transformer binary model")
+    parser = argparse.ArgumentParser(description="Train CLIP binary model")
     parser.add_argument("--num_epochs", type=int, default=20, help="number of epochs to train")
     parser.add_argument("--batch_size", type=int, default=16, help="batch size")
     parser.add_argument("--learning_rate", type=float, default=0.0005, help="learning rate")
@@ -199,12 +196,10 @@ def main():
     parser.add_argument("--dataset", type=str, default="ccccii", help="Dataset name")
     parser.add_argument("--run_cloud", action="store_true", help="Flag to indicate cloud mode")
     parser.add_argument("--max_samples", type=int, default=0, help="Maximum number of samples to use")
-
     args = parser.parse_args()
     my_logger.info(f"Args: {args}")
     my_logger.info(f"Current Working Directory: {os.getcwd()}")
 
-    # Start an MLflow run
     mlflow.start_run()
 
     if not args.run_cloud:
@@ -255,7 +250,7 @@ def main():
     my_logger.info("Data loaders created")
 
     my_logger.info("Starting model training")
-    train_model(train_loader, val_loader, args.num_epochs, args.learning_rate, args.cnn_model_path)
+    train_model(train_loader, val_loader, args.num_epochs, args.learning_rate)
     mlflow.end_run()
     my_logger.info("MLflow run ended")
 

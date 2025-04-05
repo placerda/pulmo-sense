@@ -3,3 +3,5 @@ from .ccccii_dataset import CCCCIIDatasetSequence2D
 from .ccccii_dataset import CCCCIIDatasetSequence2DBinary
 from .ccccii_dataset import CCCIIIDataset3D
 from .dataset_statistics import DatasetStatistics
+from .mosmed_dataset import MosmedDataset2DBinary
+from .mosmed_dataset import MosmedSequenceDataset2DBinary

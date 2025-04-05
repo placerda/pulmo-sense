@@ -30,8 +30,8 @@ ml_client = MLClient(
 )
 
 # Create or get the GPU cluster
-# gpu_compute_target = "gpuclutereastus"
-# gpu_compute_target = "gpuclutereastus"
+# gpu_compute_target = "gpucluteruk"
+# gpu_compute_target = "gpuclustercentralindia3"
 gpu_compute_target = "gpuclutercentralindia"
 try:
     gpu_cluster = ml_client.compute.get(gpu_compute_target)

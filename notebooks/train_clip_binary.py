@@ -1,6 +1,7 @@
 # %% [markdown]
-# ### Train ViT Binary Model
-# This notebook sets up and submits an Azure ML job to train the Vision Transformer model for binary classification.
+# ### Train CLIP Binary Model in the Cloud
+# This notebook sets up and submits an Azure ML job to train the CLIP‐based binary model.
+# It uses the training script at "scripts/train/train_clip_binary.py".
 
 # %%
 from dotenv import load_dotenv
@@ -30,9 +31,8 @@ ml_client = MLClient(
 )
 
 # Create or get the GPU cluster
-# gpu_compute_target = "gpucluteruk"
-gpu_compute_target = "gpuclutercentralindia"
-
+# gpu_compute_target = "gpuclutercentralindia"  # or your preferred compute target
+gpu_compute_target = "gpuclustercentralindia2"  # or your preferred compute target
 try:
     gpu_cluster = ml_client.compute.get(gpu_compute_target)
     print(f"You already have a cluster named {gpu_compute_target}, we'll reuse it as is.")
@@ -51,7 +51,6 @@ except Exception:
     gpu_cluster = ml_client.begin_create_or_update(gpu_cluster).result()
 print(f"AMLCompute with name {gpu_cluster.name} is created, the compute size is {gpu_cluster.size}")
 
-# %%
 # Azure ML environment and job setup
 custom_env_name = "custom-acpt-pytorch-113-cuda117:12"
 
@@ -74,7 +73,7 @@ def get_display_name(base_name):
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     return f"{base_name} {current_time}"
 
-experiment_name = "vit_binary"
+experiment_name = "clip_binary"
 display_name = get_display_name(experiment_name)
 
 job = command(
@@ -83,7 +82,7 @@ job = command(
     environment=custom_env_name,
     code="../",  # location of source code
     command=(
-        "python -m scripts.train.train_vit_binary "
+        "python -m scripts.train.train_clip_binary "
         "--run_cloud "
         "--dataset ${{inputs.dataset}} "
         "--k ${{inputs.k}} "

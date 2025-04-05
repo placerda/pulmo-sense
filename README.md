@@ -90,10 +90,69 @@ Ensure datasets are placed in the expected folder structure before executing tra
 | Model                                      | Accuracy (%) | AUC   | F1 Score | Precision | Recall |
 |-------------------------------------------|--------------|-------|----------|-----------|--------|
 | >> LSTM with VGG features                 |              |       |          |           |        |
-| >> VGG                                    |              |       |          |           |        |
+| >> VGG                                       |             |        |          |           |        |
 | >> Attention-based LSTM with VGG features |              |       |          |           |        |
-| >> ViT                                    |              |       |          |           |        |
+| ViT                                       | 89.82        | 0.981 | 0.869    | 0.952     | 0.800  |
 
+
+
+VGG
+train_accuracy
+Min: 
+93.50033
+, Max: 
+98.06947
+, Last: 
+98.06947
+train_loss
+Min: 
+0.06125321
+, Max: 
+0.1747360
+, Last: 
+0.07176869
+val_accuracy
+Min: 
+96.68671
+, Max: 
+98.43687
+, Last: 
+97.54843
+val_auc
+Min: 
+0.001289100
+, Max: 
+0.005072858
+, Last: 
+0.002991786
+val_f1_score
+Min: 
+0.9616515
+, Max: 
+0.9816930
+, Last: 
+0.9713124
+val_loss
+Min: 
+0.04484989
+, Max: 
+0.1128579
+, Last: 
+0.06648528
+val_precision
+Min: 
+0.9432732
+, Max: 
+0.9740723
+, Last: 
+0.9629572
+val_recall
+Min: 
+0.9583662
+, Max: 
+0.9911686
+, Last: 
+0.9798139
 
 ### Multiclass Classification (0-CP, 1-NCP, 2-Normal)
 

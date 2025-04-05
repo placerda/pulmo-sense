@@ -1,6 +1,7 @@
 # %% [markdown]
-# ### Train ViT Binary Model
-# This notebook sets up and submits an Azure ML job to train the Vision Transformer model for binary classification.
+# ### Train MAE Binary Model in the Cloud
+# This notebook sets up and submits an Azure ML job to train the MAE‐based binary model.
+# It uses the training script at "scripts/train/train_mae_binary.py".
 
 # %%
 from dotenv import load_dotenv
@@ -30,8 +31,7 @@ ml_client = MLClient(
 )
 
 # Create or get the GPU cluster
-# gpu_compute_target = "gpucluteruk"
-gpu_compute_target = "gpuclutercentralindia"
+gpu_compute_target = "gpuclustercentralindia3"  # or your preferred compute target
 
 try:
     gpu_cluster = ml_client.compute.get(gpu_compute_target)
@@ -74,7 +74,7 @@ def get_display_name(base_name):
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     return f"{base_name} {current_time}"
 
-experiment_name = "vit_binary"
+experiment_name = "mae_binary"
 display_name = get_display_name(experiment_name)
 
 job = command(
@@ -83,7 +83,7 @@ job = command(
     environment=custom_env_name,
     code="../",  # location of source code
     command=(
-        "python -m scripts.train.train_vit_binary "
+        "python -m scripts.train.train_mae_binary "
         "--run_cloud "
         "--dataset ${{inputs.dataset}} "
         "--k ${{inputs.k}} "

@@ -30,7 +30,8 @@ ml_client = MLClient(
 )
 
 # Create or get the GPU cluster
-gpu_compute_target = "gpuclutercentralindia"
+gpu_compute_target = "gpuclustercentralindia3"
+# gpu_compute_target = "gpuclutercentralindia"
 try:
     gpu_cluster = ml_client.compute.get(gpu_compute_target)
     print(f"You already have a cluster named {gpu_compute_target}, we'll reuse it as is.")
@@ -50,7 +51,7 @@ except Exception:
 print(f"AMLCompute with name {gpu_cluster.name} is created, compute size is {gpu_cluster.size}")
 
 # Set Azure ML environment and job configuration
-custom_env_name = "custom-acpt-pytorch-113-cuda117:10"
+custom_env_name = "custom-acpt-pytorch-113-cuda117:12"
 env_vars = {
     'AZURE_STORAGE_ACCOUNT': os.getenv("AZURE_STORAGE_ACCOUNT"),
     'AZURE_STORAGE_KEY': os.getenv("AZURE_STORAGE_KEY"),
@@ -71,8 +72,7 @@ inputs = {
     "learning_rate": 0.0005,
     "k": 5,
     "i": 0,
-    "dataset": "ccccii",
-    "cnn_model_path": "models/pretrained_vgg_binary.pth"
+    "dataset": "ccccii"
 }
 
 job = command(
@@ -89,7 +89,6 @@ job = command(
         "--num_epochs ${{inputs.num_epochs}} "
         "--batch_size ${{inputs.batch_size}} "
         "--learning_rate ${{inputs.learning_rate}} "
-        "--cnn_model_path ${{inputs.cnn_model_path}}"
     ),
     environment_variables=env_vars,
     experiment_name=experiment_name,

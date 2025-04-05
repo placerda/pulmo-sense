@@ -22,7 +22,8 @@ import torch.optim as optim
 import torchvision.models as models
 import matplotlib.pyplot as plt
 from sklearn.model_selection import StratifiedKFold
-from sklearn.metrics import recall_score, precision_score, f1_score, roc_auc_score
+from sklearn.metrics import recall_score, precision_score, f1_score
+from sklearn.metrics import roc_curve, auc
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 from torch.utils.data import DataLoader, Subset
 from dotenv import load_dotenv
@@ -179,23 +180,20 @@ def train_model(train_loader, val_loader, num_epochs, learning_rate, vgg_model_p
                     all_probs.extend(probabilities.cpu().numpy())
             val_loss /= total
             val_accuracy = 100.0 * correct / total
-
-            # IMPORTANT: For binary classification the positive class is the one with label 0.
-            # Extract probability for class 0 and compute ROC AUC with pos_label=0.
             all_probs = np.array(all_probs)
-            positive_probs = all_probs[:, 0]
             try:
-                val_auc = roc_auc_score(all_labels, positive_probs)
-                my_logger.info("AUC computed using positive class probabilities (index 0).")
+                positive_probs = all_probs[:, 0]  # Probability of class 0 (positive)
+                fpr, tpr, _ = roc_curve(all_labels, positive_probs, pos_label=0)
+                val_auc = auc(fpr, tpr)
+                my_logger.info("AUC computed using roc_curve with pos_label=0.")
             except ValueError as e:
                 my_logger.error("Error computing AUC: %s", e)
                 val_auc = 0.0
-
             # For recall, precision, f1 we can use binary averaging
             val_preds = np.argmax(all_probs, axis=1)
-            val_recall = recall_score(all_labels, val_preds, average='binary', zero_division=0)
-            val_precision = precision_score(all_labels, val_preds, average='binary', zero_division=0)
-            val_f1 = f1_score(all_labels, val_preds, average='binary', zero_division=0)
+            val_recall = recall_score(all_labels, val_preds, pos_label=0, average='binary', zero_division=0)
+            val_precision = precision_score(all_labels, val_preds, pos_label=0, average='binary', zero_division=0)
+            val_f1 = f1_score(all_labels, val_preds, pos_label=0, average='binary', zero_division=0)
 
             my_logger.info(
                 f'Epoch {epoch+1} Validation: Loss={val_loss:.4f}, Acc={val_accuracy:.2f}%, '
