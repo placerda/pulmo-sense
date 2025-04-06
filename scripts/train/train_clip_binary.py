@@ -48,7 +48,7 @@ class CLIPBinaryModel(nn.Module):
         # Optionally, freeze the CLIP vision encoder for faster training:
         # for param in self.clip.vision_model.parameters():
         #     param.requires_grad = False
-        hidden_size = self.clip.config.vision_hidden_size
+        hidden_size = self.clip.config.vision_config.hidden_size
         self.classifier = nn.Linear(hidden_size, num_classes)
     
     def forward(self, x):

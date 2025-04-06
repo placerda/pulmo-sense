@@ -15,8 +15,10 @@ gdcm==1.1
 idna>=3.7
 inference-schema
 ipykernel~=6.0
+lungmask
 MarkupSafe==2.1.2
 matplotlib~=3.5.0
+nibabel 
 numpy
 opencv-python>=4.5.5.64
 Pillow
@@ -25,6 +27,7 @@ py-cpuinfo==5.0.0
 py-spy==0.3.12
 pybind11
 pydicom==2.4.4
+# pydicom==1.4.2
 pylibjpeg==2.0.1
 pylibjpeg-libjpeg==2.2.0
 pylibjpeg-openjpeg==2.3.0
@@ -38,6 +41,8 @@ tensorboard
 timm==1.0.12
 torch==2.3.1
 torch-tb-profiler~=0.4.0
+TotalSegmentator
 tqdm~=4.66.3
 transformers>=4.0.0
+unet_lungs_segmentation
 urllib3>=1.26.18

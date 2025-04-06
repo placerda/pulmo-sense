@@ -62,28 +62,28 @@ def get_display_name(base_name):
     return f"{base_name} {current_time}"
 
 # ViT
-experiment_name = "test_mosmed_model_vit"
-inputs = {
-    "mosmed_dataset": "mosmed_png_normal",  # Adjust as needed (could be a blob container path)
-    "batch_size": 16,
-    "model_type": "vit",  # Choose from "vgg", "vit", or "lstm_attn"    
-    "model_path": "models/vgg_multiclass_best.pth",
-    "vgg_model_path": "models/vgg_multiclass_best.pth",
-    "model_uri": "https://myexperiments0584390316.blob.core.windows.net/azureml/ExperimentRun/dcid.khaki_nut_hmj8v1471s/outputs/vit_binary_4epoch_0.00050lr_0.954rec.pth",
-    "vgg_model_uri": "none"
-}
-
-# # VGG
-# experiment_name = "test_mosmed_model_vgg"
+# experiment_name = "test_mosmed_model_vit"
 # inputs = {
-#     "mosmed_dataset": "mosmed_png",  # Adjust as needed (could be a blob container path)
+#     "mosmed_dataset": "mosmed_png_normal",  # Adjust as needed (could be a blob container path)
 #     "batch_size": 16,
-#     "model_type": "vgg",  # Choose from "vgg", "vit", or "lstm_attn"    
-#     "model_path": "models/vgg_multiclass_best.pth",
-#     "vgg_model_path": "models/vgg_multiclass_best.pth",
-#     "model_uri": "https://myexperiments0584390316.blob.core.windows.net/azureml/ExperimentRun/dcid.khaki_cushion_scg7j7tk4m/outputs/vgg_binary_5epoch_0.00050lr_0.997rec.pth",
+#     "model_type": "vit",  # Choose from "vgg", "vit", or "lstm_attn"    
+#     "model_path": "models/vit_binary_best.pth",
+#     "vgg_model_path": "models/vgg_binary_best.pth",
+#     "model_uri": "https://myexperiments0584390316.blob.core.windows.net/azureml/ExperimentRun/dcid.khaki_nut_hmj8v1471s/outputs/vit_binary_4epoch_0.00050lr_0.954rec.pth",
 #     "vgg_model_uri": "none"
 # }
+
+# VGG
+experiment_name = "test_mosmed_model_vgg"
+inputs = {
+    "mosmed_dataset": "mosmed_png",  # Adjust as needed (could be a blob container path)
+    "batch_size": 16,
+    "model_type": "vgg",  # Choose from "vgg", "vit", or "lstm_attn"    
+    "model_path": "models/vgg_binary_best.pth",
+    "vgg_model_path": "models/vgg_binary_best.pth",
+    "model_uri": "https://myexperiments0584390316.blob.core.windows.net/azureml/ExperimentRun/dcid.khaki_cushion_scg7j7tk4m/outputs/vgg_binary_5epoch_0.00050lr_0.997rec.pth",
+    "vgg_model_uri": "none"
+}
 
 # LSTM-ATTN
 # experiment_name = "test_mosmed_model_vgg"
