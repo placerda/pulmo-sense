@@ -18,26 +18,47 @@ This repository includes:
 
 ---
 
-## 🚀 Getting Started
+## 🧑‍💻 Methods Overview
 
-### Installation
+### VGG-based Classifier  
+*Utilizes deep convolutional neural networks to accurately identify key pathological features from lung CT scans.*
 
-1. Clone the repository:
-   ```bash
-   git clone <repository_url>
-   cd placerda-pulmo-sense
-   ```
+Uses a VGG-16 model pretrained on ImageNet and fine-tuned for CT scan classification. Each axial CT slice is resized to 224×224 and passed through the convolutional backbone of the VGG model. Extracted features are flattened and passed through fully connected layers with batch normalization and dropout layers to enhance generalization and reduce overfitting. The final classification layer outputs logits for binary or multiclass prediction, trained using cross-entropy loss with early stopping based on validation performance.
 
-2. Set up a Python environment:
-   ```bash
-   conda create -n pulmo-sense python=3.11
-   conda activate pulmo-sense
-   ```
+---
 
-3. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+### LSTM with VGG Features  
+*Combines spatial feature extraction with sequential modeling to analyze CT scans, capturing the temporal progression across image slices.*
+
+Each slice in a CT scan is first processed by a VGG-16 feature extractor. The resulting sequence of feature vectors (one per slice) is fed into an LSTM layer that captures inter-slice temporal dependencies. The LSTM's output is aggregated using the final hidden state or an average pooling strategy. The aggregated representation is passed through a fully connected classifier. Training uses a sliding window approach to handle varying scan lengths.
+
+---
+
+### Attention-LSTM with VGG Features  
+*Enhances standard LSTM models by incorporating attention mechanisms, focusing explicitly on diagnostically relevant CT slices.*
+
+Similar to the LSTM with VGG architecture, this model first extracts VGG-based features from each slice and processes them with an LSTM layer. An attention layer then learns to weigh each time step's output, highlighting more informative slices. The weighted sum is passed to a dense classifier. This helps the model focus on subtle pathology-related frames while reducing noise from irrelevant slices.
+
+---
+
+### Masked Autoencoder (MAE)  
+*Leverages unsupervised representation learning by reconstructing obscured image regions, suitable for datasets with incomplete or noisy medical images.*
+
+Uses a Vision Transformer-based MAE pretrained on large datasets, where 75% of input patches are randomly masked. The encoder (ViT) processes the visible patches, and the decoder reconstructs the full image. For classification, only the encoder is retained. Each CT slice is encoded, and the resulting features are aggregated across slices using average pooling or an LSTM. A linear classifier is used for final predictions.
+
+---
+
+### CLIP (Contrastive Language-Image Pretraining)  
+*Uses multimodal embeddings combining visual features with semantic textual descriptions to generalize across clinical contexts.*
+
+Applies a pretrained CLIP model that includes a visual encoder (ViT or ResNet) and a text encoder (Transformer). CT images are encoded, and textual class labels such as "Normal", "Common Pneumonia", and "COVID-19" are embedded using the text encoder. Cosine similarity is computed between image and text embeddings, and the most similar class is predicted. This zero-shot setting enables flexible generalization.
+
+---
+
+### Vision Transformer (ViT)  
+*Processes CT scans through self-attention mechanisms, capturing long-range dependencies within image patches.*
+
+CT slices are resized and divided into fixed-size patches (e.g., 16×16). Each patch is linearly embedded and enriched with positional encodings. The sequence of patch embeddings is fed into a series of transformer encoder layers with multi-head self-attention. A special classification token is prepended to the sequence, and its final hidden state is used for prediction. For 3D scans, features can be averaged or processed sequentially.
 
 ---
 
@@ -47,32 +68,12 @@ This repository includes:
 |--------|-------------|
 | `datasets/` | Dataset classes and statistics scripts |
 | `environment/` | Configuration files (e.g., Docker) |
-| `notebooks/` | Jupyter notebooks for training and experiments |
+| `cloud_run/` | Python programs to start cloud experiments |
 | `scripts/` | Training scripts organized by model architecture |
-| `shell/` | Shell scripts for dataset download and model training |
+| `local_run/` | Cloud scripts to run training, test  and evaluation locally |
 | `utils/` | Utility scripts (logging, downloading, checks) |
 | `README.md` | Project documentation |
 | `DATASET.md` | Dataset details and usage instructions |
-
----
-
-## ⚙️ Usage
-
-### Training Models
-
-Use the shell scripts in the `shell/` directory to train models:
-
-```bash
-bash shell/train_vgg_multiclass.sh
-```
-
-> **Note:** You can also train models using **Azure Machine Learning** via the notebooks in `/notebooks`. Examples include training CNN, LSTM, VGG, and ViT models using Azure compute resources.
-
-### Adding Custom Models or Datasets
-
-1. Add a new dataset handler in `datasets/`.
-2. Create or modify a training script in `scripts/train/`.
-3. Update shell scripts in `shell/` if needed.
 
 ---
 
@@ -87,20 +88,22 @@ Ensure datasets are placed in the expected folder structure before executing tra
 
 ### Binary Classification (0-NCP, 1-Normal)
 
-| Model                                      | Accuracy (%) | AUC   | F1 Score | Precision | Recall |
-|-------------------------------------------|--------------|-------|----------|-----------|--------|
-| >> LSTM with VGG features                 |              |       |          |           |        |
-| >> VGG                                       |             |        |          |           |        |
-| >> Attention-based LSTM with VGG features |              |       |          |           |        |
-| ViT                                       | 89.82        | 0.981 | 0.869    | 0.952     | 0.800  |
+| Method                                | Accuracy (%) | AUC   | F1 Score | Precision | Recall | Training Time |
+|---------------------------------------|--------------|-------|----------|-----------|--------|----------------|
+| **VGG-based Classifier**              | **98.87**    | 0.999 | 0.987    | 0.979     | 0.997  | ~25 min        |
+| LSTM with VGG Features                | 97.80        | 0.997 | 0.977    | 0.977     | 0.978  | ~42 min        |
+| Attention-LSTM with VGG Features      | 96.79        | 0.995 | 0.972    | 0.993     | 0.962  | ~48 min        |
+| Masked Autoencoder (MAE)              | 96.75        | 0.994 | 0.962    | 0.960     | 0.989  | ~55 min        |
+| CLIP                                  | 94.22        | 0.986 | 0.933    | 0.914     | 0.980  | ~30 min        |
+| Vision Transformer (ViT)              | 94.19        | 0.984 | 0.933    | 0.952     | 0.954  | ~37 min        |
 
-
+---
 
 ### Multiclass Classification (0-CP, 1-NCP, 2-Normal)
 
 | Model                                      | Accuracy (%) | AUC   | F1 Score | Precision | Recall |
 |-------------------------------------------|--------------|-------|----------|-----------|--------|
-| >> VGG                                        | 99.08        | 0.999 | 0.990    | 0.990     | 0.991  |
+| **VGG**                                    | **99.08**    | 0.999 | 0.990    | 0.990     | 0.991  |
 | Attention-based LSTM with VGG features     | 95.19        | 0.993 | 0.951    | 0.949     | 0.954  |
 | Attention-based LSTM with 2D CNN features  | 94.67        | 0.994 | 0.946    | 0.946     | 0.946  |
 | LSTM with VGG features                     | 94.15        | 0.993 | 0.941    | 0.939     | 0.945  |
@@ -114,19 +117,16 @@ Ensure datasets are placed in the expected folder structure before executing tra
 ## 📝 Notes
 
 **Binary Classification**
-- LSTM with VGG features achieved the highest accuracy, effectively modeling temporal features extracted by VGG.
-- VGG demonstrated excellent standalone feature extraction, providing near-best results.
-- Attention-based LSTM with VGG features closely followed, suggesting attention mechanisms enhance temporal feature modeling.
-- ViT demonstrated reasonable performance, yet fell short compared to models explicitly modeling sequential information.
+- VGG-based classifiers achieved state-of-the-art performance, highlighting the power of deep CNNs for spatial feature extraction.
+- LSTM and Attention-LSTM models demonstrated the value of modeling temporal context across CT slices.
+- MAE and CLIP models offered competitive results using unsupervised and multimodal learning respectively.
+- ViT models performed well, though hybrid models incorporating sequential modeling were more effective.
 
 **Multiclass Classification**
-- VGG emerged as the top-performing model, showcasing superior feature extraction and robust generalization.
-- Attention-based LSTM with VGG features secured the second-best performance, effectively combining attention mechanisms with powerful VGG-derived features.
-- Attention-based LSTM with 2D CNN features performed notably, underscoring the significance of attention layers in enhancing sequential modeling capabilities.
-- LSTM with either VGG or CNN features was effective in capturing temporal relationships among slices, proving their utility in multiclass scenarios.
-- ViT displayed potential leveraging self-attention but did not surpass hybrid architectures integrating sequential and spatial data.
-- 2D CNN served as a strong baseline, though it lacked the additional performance gains offered by temporal or attention-driven methods.
-- 3D CNN-LSTM notably struggled, suggesting difficulties in adequately capturing complex spatiotemporal dependencies in the data.
+- VGG again led performance, followed by attention-enhanced sequential models.
+- Temporal modeling (via LSTM) with attention layers showed strong generalization.
+- Pure ViT and 2D CNN approaches served as solid baselines but lacked the benefits of sequence modeling.
+- 3D CNN-LSTM struggled significantly, indicating challenges in complex spatiotemporal modeling for this dataset.
 
 ---
 
@@ -157,88 +157,23 @@ Given the clinical relevance of underrepresented conditions, macro metrics provi
 
 ## 📐 Metric Calculation Details
 
-This section describes how each evaluation metric used in PulmoSense is computed, with a focus on the multiclass setting using **macro averaging**.
-
 ### **Accuracy**
-> **Definition**: The ratio of correct predictions to total predictions.
-
-**Formula**:
-\[
-\text{Accuracy} = \frac{\text{Number of Correct Predictions}}{\text{Total Number of Predictions}}
-\]
-
----
+![Accuracy](https://latex.codecogs.com/png.image?\dpi{120} \text{Accuracy}=\frac{\text{Number\ of\ Correct\ Predictions}}{\text{Total\ Number\ of\ Predictions}})
 
 ### **Precision (Macro-Averaged)**
-> **Definition**: The proportion of true positive predictions among all positive predictions, averaged across all classes.
-
-**Per-class Precision**:
-\[
-\text{Precision}_i = \frac{\text{True Positives}_i}{\text{True Positives}_i + \text{False Positives}_i}
-\]
-
-**Macro Precision**:
-\[
-\text{Precision}_{macro} = \frac{1}{N} \sum_{i=1}^{N} \text{Precision}_i
-\]
-Where **N** is the number of classes.
-
----
+![Precision Macro](https://latex.codecogs.com/png.image?\dpi{120} \text{Precision}_i=\frac{\text{TP}_i}{\text{TP}_i+\text{FP}_i}\quad,\quad\text{Precision}_{macro}=\frac{1}{N}\sum_{i=1}^{N}\text{Precision}_i)
 
 ### **Recall (Macro-Averaged)**
-> **Definition**: The proportion of true positive predictions among all actual positive instances, averaged across all classes.
-
-**Per-class Recall**:
-\[
-\text{Recall}_i = \frac{\text{True Positives}_i}{\text{True Positives}_i + \text{False Negatives}_i}
-\]
-
-**Macro Recall**:
-\[
-\text{Recall}_{macro} = \frac{1}{N} \sum_{i=1}^{N} \text{Recall}_i
-\]
-
----
+![Recall Macro](https://latex.codecogs.com/png.image?\dpi{120} \text{Recall}_i=\frac{\text{TP}_i}{\text{TP}_i+\text{FN}_i}\quad,\quad\text{Recall}_{macro}=\frac{1}{N}\sum_{i=1}^{N}\text{Recall}_i)
 
 ### **F1 Score (Macro-Averaged)**
-> **Definition**: The harmonic mean of precision and recall, averaged across all classes.
+![F1 Macro](https://latex.codecogs.com/png.image?\dpi{120} \text{F1}_i=\frac{2\cdot\text{Precision}_i\cdot\text{Recall}_i}{\text{Precision}_i+\text{Recall}_i}\quad,\quad\text{F1}_{macro}=\frac{1}{N}\sum_{i=1}^{N}\text{F1}_i)
 
-**Per-class F1 Score**:
-\[
-\text{F1}_i = \frac{2 \cdot \text{Precision}_i \cdot \text{Recall}_i}{\text{Precision}_i + \text{Recall}_i}
-\]
-
-**Macro F1 Score**:
-\[
-\text{F1}_{macro} = \frac{1}{N} \sum_{i=1}^{N} \text{F1}_i
-\]
-
----
-
-### **AUC (Area Under the ROC Curve, One-vs-Rest)**
-> **Definition**: Measures the model's ability to distinguish each class from the others. In multiclass classification, **One-vs-Rest (OvR)** strategy is used.
-
-For each class:
-- Treat it as the **positive class**, and all others as **negative**.
-- Compute the ROC AUC curve.
-- Average the AUCs across all classes.
-
-**AUC (OvR Average)**:
-\[
-\text{AUC}_{macro} = \frac{1}{N} \sum_{i=1}^{N} \text{AUC}_i
-\]
-
----
+### **AUC (One-vs-Rest)**
+![AUC Macro](https://latex.codecogs.com/png.image?\dpi{120} \text{AUC}_{macro}=\frac{1}{N}\sum_{i=1}^{N}\text{AUC}_i)
 
 ### **Confusion Matrix**
-> **Definition**: A square matrix where rows represent the actual classes and columns represent the predicted classes.
-
-Each element **(i, j)** in the matrix represents the number of instances from class **i** that were predicted as class **j**.
-
-It helps identify:
-- **True Positives** (diagonal cells)
-- **False Positives / False Negatives** (off-diagonal cells)
-- Patterns of misclassification between classes
+> Each element (i, j) indicates how many instances of class i were predicted as class j.
 
 ---
 
