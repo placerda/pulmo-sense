@@ -158,19 +158,22 @@ Given the clinical relevance of underrepresented conditions, macro metrics provi
 ## 📐 Metric Calculation Details
 
 ### **Accuracy**
-![Accuracy](https://latex.codecogs.com/png.image?\dpi{120} \text{Accuracy}=\frac{\text{Number\ of\ Correct\ Predictions}}{\text{Total\ Number\ of\ Predictions}})
+Accuracy = (Number of Correct Predictions) / (Total Number of Predictions)
 
 ### **Precision (Macro-Averaged)**
-![Precision Macro](https://latex.codecogs.com/png.image?\dpi{120} \text{Precision}_i=\frac{\text{TP}_i}{\text{TP}_i+\text{FP}_i}\quad,\quad\text{Precision}_{macro}=\frac{1}{N}\sum_{i=1}^{N}\text{Precision}_i)
+Precision_i = TP_i / (TP_i + FP_i)
+Precision_macro = (1 / N) * sum_{i=1}^{N} Precision_i
 
 ### **Recall (Macro-Averaged)**
-![Recall Macro](https://latex.codecogs.com/png.image?\dpi{120} \text{Recall}_i=\frac{\text{TP}_i}{\text{TP}_i+\text{FN}_i}\quad,\quad\text{Recall}_{macro}=\frac{1}{N}\sum_{i=1}^{N}\text{Recall}_i)
+Recall_i = TP_i / (TP_i + FN_i)
+Recall_macro = (1 / N) * sum_{i=1}^{N} Recall_i
 
 ### **F1 Score (Macro-Averaged)**
-![F1 Macro](https://latex.codecogs.com/png.image?\dpi{120} \text{F1}_i=\frac{2\cdot\text{Precision}_i\cdot\text{Recall}_i}{\text{Precision}_i+\text{Recall}_i}\quad,\quad\text{F1}_{macro}=\frac{1}{N}\sum_{i=1}^{N}\text{F1}_i)
+F1_i = (2 * Precision_i * Recall_i) / (Precision_i + Recall_i)
+F1_macro = (1 / N) * sum_{i=1}^{N} F1_i
 
 ### **AUC (One-vs-Rest)**
-![AUC Macro](https://latex.codecogs.com/png.image?\dpi{120} \text{AUC}_{macro}=\frac{1}{N}\sum_{i=1}^{N}\text{AUC}_i)
+AUC_macro = (1 / N) * sum_{i=1}^{N} AUC_i
 
 ### **Confusion Matrix**
 > Each element (i, j) indicates how many instances of class i were predicted as class j.
