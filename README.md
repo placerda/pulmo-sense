@@ -154,26 +154,62 @@ In multiclass classification — especially with imbalanced datasets — macro a
 Given the clinical relevance of underrepresented conditions, macro metrics provide a fairer and more informative evaluation framework.
 
 ---
+Claro! Aqui está uma versão aprimorada da seção, com uma explicação clara sobre o uso de métricas macro e uma observação específica para o caso binário:
+
+---
 
 ## 📐 Metric Calculation Details
 
+This section explains how each evaluation metric is calculated. For multi-class classification problems, we use **macro-averaging**, which treats all classes equally by computing the metric independently for each class and then averaging. This is particularly useful when the classes are imbalanced.
+
+> ⚠️ **Note for Binary Classification:**  
+> Although the formulas below describe **macro-averaging** (commonly used in multi-class scenarios), for **binary classification**, we report standard (non-macro) metrics. This is intentional and acceptable since macro-averaging is redundant when only two classes are involved.
+
+---
+
 ### **Accuracy**
-Accuracy = (Number of Correct Predictions) / (Total Number of Predictions)
+**Accuracy** = (Number of Correct Predictions) ÷ (Total Number of Predictions)
+
+---
 
 ### **Precision (Macro-Averaged)**
-Precision_i = TP_i / (TP_i + FP_i)
-Precision_macro = (1 / N) * sum_{i=1}^{N} Precision_i
+For each class *i*:
+
+  **Precisionᵢ** = TPᵢ ÷ (TPᵢ + FPᵢ)
+
+Then:
+
+  **Macro Precision** = (1 ÷ N) × Σᵢ Precisionᵢ
+
+---
 
 ### **Recall (Macro-Averaged)**
-Recall_i = TP_i / (TP_i + FN_i)
-Recall_macro = (1 / N) * sum_{i=1}^{N} Recall_i
+For each class *i*:
+
+  **Recallᵢ** = TPᵢ ÷ (TPᵢ + FNᵢ)
+
+Then:
+
+  **Macro Recall** = (1 ÷ N) × Σᵢ Recallᵢ
+
+---
 
 ### **F1 Score (Macro-Averaged)**
-F1_i = (2 * Precision_i * Recall_i) / (Precision_i + Recall_i)
-F1_macro = (1 / N) * sum_{i=1}^{N} F1_i
+For each class *i*:
 
-### **AUC (One-vs-Rest)**
-AUC_macro = (1 / N) * sum_{i=1}^{N} AUC_i
+  **F1ᵢ** = (2 × Precisionᵢ × Recallᵢ) ÷ (Precisionᵢ + Recallᵢ)
+
+Then:
+
+  **Macro F1** = (1 ÷ N) × Σᵢ F1ᵢ
+
+---
+
+### **AUC (One-vs-Rest, Macro-Averaged)**
+**Macro AUC** = (1 ÷ N) × Σᵢ AUCᵢ  
+Each AUCᵢ is calculated using a One-vs-Rest approach.
+
+---
 
 ### **Confusion Matrix**
 > Each element (i, j) indicates how many instances of class i were predicted as class j.
