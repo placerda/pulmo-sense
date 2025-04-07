@@ -86,6 +86,8 @@ Ensure datasets are placed in the expected folder structure before executing tra
 
 ## 📈 Results
 
+### Binary Classification (0-NCP, 1-Normal)
+
 | Method                                | Accuracy (%) | AUC   | F1 Score | Precision | Recall | Training Time |
 |---------------------------------------|--------------|-------|----------|-----------|--------|----------------|
 | **VGG**                               | **98.87**    | 0.999 | 0.987    | 0.979     | 0.997  | **4h 11m 16s**   |
