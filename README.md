@@ -34,7 +34,7 @@ Each slice in a CT scan is first processed by a VGG-16 feature extractor. The re
 
 ---
 
-### Attention-LSTM with VGG Features  
+### Attention-based LSTM with VGG Features  
 *Enhances standard LSTM models by incorporating attention mechanisms, focusing explicitly on diagnostically relevant CT slices.*
 
 Similar to the LSTM with VGG architecture, this model first extracts VGG-based features from each slice and processes them with an LSTM layer. An attention layer then learns to weigh each time step's output, highlighting more informative slices. The weighted sum is passed to a dense classifier. This helps the model focus on subtle pathology-related frames while reducing noise from irrelevant slices.
@@ -49,9 +49,9 @@ Uses a Vision Transformer-based MAE pretrained on large datasets, where 75% of i
 ---
 
 ### CLIP (Contrastive Language-Image Pretraining)  
-*Uses multimodal embeddings combining visual features with semantic textual descriptions to generalize across clinical contexts.*
+*Uses CLIP’s vision encoder to classify CT scans without using text or zero-shot features.*
 
-Applies a pretrained CLIP model that includes a visual encoder (ViT or ResNet) and a text encoder (Transformer). CT images are encoded, and textual class labels such as "Normal", "Common Pneumonia", and "COVID-19" are embedded using the text encoder. Cosine similarity is computed between image and text embeddings, and the most similar class is predicted. This zero-shot setting enables flexible generalization.
+Only the vision transformer (ViT) from openai/clip-vit-base-patch32 is used. CT images are converted to 3-channel, resized to 224×224, and passed through the encoder. The pooled output feeds a linear classification head trained from scratch. The text encoder is not used.
 
 ---
 
@@ -90,9 +90,9 @@ Ensure datasets are placed in the expected folder structure before executing tra
 
 | Method                                | Accuracy (%) | AUC   | F1 Score | Precision | Recall | Training Time |
 |---------------------------------------|--------------|-------|----------|-----------|--------|----------------|
-| **VGG-based Classifier**              | **98.87**    | 0.999 | 0.987    | 0.979     | 0.997  | ~25 min        |
+| **VGG**              | **98.87**    | 0.999 | 0.987    | 0.979     | 0.997  | ~25 min        |
 | LSTM with VGG Features                | 97.80        | 0.997 | 0.977    | 0.977     | 0.978  | ~42 min        |
-| Attention-LSTM with VGG Features      | 96.79        | 0.995 | 0.972    | 0.993     | 0.962  | ~48 min        |
+| Attention-based LSTM with VGG Features      | 96.79        | 0.995 | 0.972    | 0.993     | 0.962  | ~48 min        |
 | Masked Autoencoder (MAE)              | 96.75        | 0.994 | 0.962    | 0.960     | 0.989  | ~55 min        |
 | CLIP                                  | 94.22        | 0.986 | 0.933    | 0.914     | 0.980  | ~30 min        |
 | Vision Transformer (ViT)              | 94.19        | 0.984 | 0.933    | 0.952     | 0.954  | ~37 min        |
