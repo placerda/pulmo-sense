@@ -86,16 +86,14 @@ Ensure datasets are placed in the expected folder structure before executing tra
 
 ## 📈 Results
 
-### Binary Classification (0-NCP, 1-Normal)
-
 | Method                                | Accuracy (%) | AUC   | F1 Score | Precision | Recall | Training Time |
 |---------------------------------------|--------------|-------|----------|-----------|--------|----------------|
-| **VGG**              | **98.87**    | 0.999 | 0.987    | 0.979     | 0.997  | ~25 min        |
-| LSTM with VGG Features                | 97.80        | 0.997 | 0.977    | 0.977     | 0.978  | ~42 min        |
-| Attention-based LSTM with VGG Features      | 96.79        | 0.995 | 0.972    | 0.993     | 0.962  | ~48 min        |
-| Masked Autoencoder (MAE)              | 96.75        | 0.994 | 0.962    | 0.960     | 0.989  | ~55 min        |
-| CLIP                                  | 94.22        | 0.986 | 0.933    | 0.914     | 0.980  | ~30 min        |
-| Vision Transformer (ViT)              | 94.19        | 0.984 | 0.933    | 0.952     | 0.954  | ~37 min        |
+| **VGG**                               | **98.87**    | 0.999 | 0.987    | 0.979     | 0.997  | **4h 11m 16s**   |
+| LSTM with VGG Features                | 97.80        | 0.997 | 0.977    | 0.977     | 0.978  | **1h 57m 51s**   |
+| Attention-based LSTM with VGG Features| 96.79        | 0.995 | 0.972    | 0.993     | 0.962  | **1h 21m 45s**   |
+| Masked Autoencoder (MAE)              | 96.75        | 0.994 | 0.962    | 0.960     | 0.989  | **5h 18m 24s**   |
+| CLIP                                  | 94.22        | 0.986 | 0.933    | 0.914     | 0.980  | **2h 45m 01s**   |
+| Vision Transformer (ViT)              | 94.19        | 0.984 | 0.933    | 0.952     | 0.954  | **2h 43m 32s**   |
 
 ---
 
