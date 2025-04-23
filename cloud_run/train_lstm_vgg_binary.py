@@ -73,7 +73,7 @@ inputs = {
     "learning_rate": 0.0005,
     "k": 5,
     "i": 0,
-    "dataset": "ccccii"
+    "dataset": "mosmed_normalized"
 }
 
 job = command(

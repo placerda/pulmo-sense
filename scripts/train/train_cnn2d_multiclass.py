@@ -16,7 +16,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, Subset
 from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix
 
-from datasets import CCCCIIDataset2D
+from datasets import Dataset2D
 from utils.download import download_from_blob
 from utils.log_config import get_custom_logger
 
@@ -236,7 +236,7 @@ def main():
         download_from_blob(storage_account, storage_account_key, container_name, dataset_folder)
 
     my_logger.info("Loading dataset")
-    my_dataset = CCCCIIDataset2D(dataset_folder, max_samples=args.max_samples)
+    my_dataset = Dataset2D(dataset_folder, max_samples=args.max_samples)
     my_logger.info(f"Dataset loaded with a maximum of {args.max_samples} samples")
 
     # Group by patient

@@ -30,7 +30,7 @@ from sklearn.model_selection import StratifiedKFold
 
 import matplotlib.pyplot as plt
 
-from datasets.ccccii_dataset import CCCCIIDataset2DBinary
+from datasets.raster_dataset import Dataset2DBinary
 from utils.download import download_from_blob
 from utils.log_config import get_custom_logger
 
@@ -206,7 +206,7 @@ def main():
         download_from_blob(storage_account, storage_key, container_name, dataset_folder)
 
     my_logger.info("Loading dataset")
-    my_dataset = CCCCIIDataset2DBinary(dataset_folder, max_samples=args.max_samples)
+    my_dataset = Dataset2DBinary(dataset_folder, max_samples=args.max_samples)
     my_logger.info(f"Dataset loaded with a maximum of {args.max_samples} samples")
 
     my_logger.info("Extracting patient IDs and labels")

@@ -1,6 +1,3 @@
-# %% [markdown]
-# ### Train VGG Binary Model
-# This notebook sets up and submits an Azure ML job to train the VGG binary model.
 
 # %%
 from dotenv import load_dotenv
@@ -51,11 +48,8 @@ except Exception:
     gpu_cluster = ml_client.begin_create_or_update(gpu_cluster).result()
 print(f"AMLCompute with name {gpu_cluster.name} is created, the compute size is {gpu_cluster.size}")
 
-
-# %%
-
 # Azure ML environment and job setup
-custom_env_name = "custom-acpt-pytorch-113-cuda117:9"
+custom_env_name = "custom-acpt-pytorch-113-cuda117:12"
 
 env_vars = {
     'AZURE_STORAGE_ACCOUNT': os.getenv("AZURE_STORAGE_ACCOUNT"),
@@ -75,7 +69,7 @@ inputs = {
     "learning_rate": 0.0005,
     "k": 5,
     "i": 0,
-    "dataset": "ccccii"
+    "dataset": "ccccii_selected_nonsegmented_train"
 }
 
 display_name=get_display_name(experiment_name)

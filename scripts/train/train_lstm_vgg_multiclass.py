@@ -16,7 +16,7 @@ from sklearn.model_selection import StratifiedKFold
 import matplotlib.pyplot as plt
 import random
 
-from datasets import CCCCIIDatasetSequence2D
+from datasets import DatasetSequence2D
 from utils.log_config import get_custom_logger
 from utils.download import download_from_blob, download_from_blob_with_access_key
 
@@ -345,7 +345,7 @@ def main():
 
     my_logger.info("Loading dataset")
     sequence_length = args.sequence_length
-    my_dataset = CCCCIIDatasetSequence2D(dataset_folder, sequence_length=sequence_length, max_samples=args.max_samples)
+    my_dataset = DatasetSequence2D(dataset_folder, sequence_length=sequence_length, max_samples=args.max_samples)
     my_logger.info(f"Dataset loaded with max_samples={args.max_samples}, sequence_length={sequence_length}")
 
     labels = my_dataset.labels

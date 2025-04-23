@@ -14,6 +14,9 @@ results/
 temp/
 mlruns/
 models/
+temp/
+local_run/
+environment/
 
 # Editors
 .vscode/

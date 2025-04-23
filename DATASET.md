@@ -76,3 +76,82 @@ Kang Zhang, Xiaohong Liu, Jun Shen, et al. Jianxing He, Tianxin Lin, Weimin Li, 
 ### Data Preparation
 
 1. Extract all dataset zip files into a `data` folder.
+
+---
+
+## Dataset: Moscow COVID-19 CT Dataset (MosMed)
+
+### Description
+
+The dataset is based on the Moscow COVID-19 CT Dataset (MosMed), which provides chest CT scans collected from patients with and without signs of COVID-19 infection. In this project, the dataset was normalized and only studies with more than 30 slices were retained for consistency.
+
+Notably, this version of the dataset contains only two categories:
+
+1. **Novel Coronavirus Pneumonia (NCP)** — cases showing signs of COVID-19-related pneumonia.
+2. **Normal controls** — CT scans without signs of pneumonia.
+
+No Common Pneumonia (CP) cases are present in this dataset. A patient-level StratifiedKFold was applied for data splitting to prevent leakage and ensure consistent distribution across folds.
+
+**Download page:** [MosMedData](https://mosmed.ai/datasets/covid19_1110/)
+
+**Reference:**
+Morozov, S., Andreychenko, A., Pavlov, N., Vladzymyrskyy, A., Ledikhova, N., Gombolevskiy, V., Blokhin, I., Gelezhe, P., Gonchar, A., Andrianova, I. (2020). MosMedData: Chest CT Scans with COVID-19 Related Findings. *arXiv preprint*, [arXiv:2005.06465](https://arxiv.org/abs/2005.06465)
+
+---
+
+### Dataset Statistics
+
+#### Slice-Based Overall Statistics
+
+| CP | CP % | NCP   | NCP %  | Normal | Normal % | Total  | Total % |
+|----|------|-------|--------|--------|----------|--------|---------|
+| 0  | 0.00%| 25650 | 77.10% | 7620   | 22.90%   | 33270  | 100.00% |
+
+#### Slice-Based Train/Val Statistics
+
+| Split | CP | CP % | NCP   | NCP %  | Normal | Normal % | Total | Total % |
+|-------|----|------|-------|--------|--------|----------|--------|---------|
+| Train | 0  | 0.00%| 20490 | 61.59% | 6120   | 18.39%   | 26610  | 79.98%  |
+| Val   | 0  | 0.00%| 5160  | 15.51% | 1500   | 4.51%    | 6660   | 20.02%  |
+
+#### Patient Counts
+
+| Class  | Total Patients | % Patients | Train Patients | Train % | Val Patients | Val %  |
+|--------|----------------|------------|----------------|---------|--------------|--------|
+| CP     | 0              | 0.00%      | 0              | 0.00%   | 0            | 0.00%  |
+| NCP    | 856            | 77.12%     | 684            | 61.62%  | 172          | 15.50% |
+| Normal | 254            | 22.88%     | 204            | 18.38%  | 50           | 4.50%  |
+| Total  | 1110           | 100.00%    | 888            | 80.00%  | 222          | 20.00% |
+
+#### Volume-Based Overall Statistics
+
+| CP | CP % | NCP | NCP % | Normal | Normal % | Total | Total % |
+|----|------|-----|--------|--------|----------|--------|---------|
+| 0  | 0.00%| 855 | 77.10% | 254    | 22.90%   | 1109   | 100.00% |
+
+#### Volume-Based Train/Val Statistics
+
+| Class  | Train Volumes | Train % of Total | Val Volumes | Val % of Total |
+|--------|----------------|------------------|--------------|----------------|
+| CP     | 0              | 0.00%            | 0            | 0.00%          |
+| NCP    | 684            | 61.68%           | 171          | 15.42%         |
+| Normal | 203            | 18.30%           | 51           | 4.60%          |
+| Total  | 887            | 79.98%           | 222          | 20.02%         |
+
+---
+
+### Download Instructions
+
+1. Visit the official dataset page: [https://mosmed.ai/datasets/covid19_1110/](https://mosmed.ai/datasets/covid19_1110/)
+2. Download the dataset archive and extract its contents into the `data` folder.
+
+---
+
+### Data Preparation
+
+1. Normalize and filter the CT scans to include only those with at least 30 slices.
+2. Organize them under `data/mosmed_normalized` with subfolders `NCP` and `Normal`.
+
+### Additional Consideration: MosMed Normalization for Domain Adaptation
+
+To improve contrast consistency and reduce domain shift, the MosMed dataset was normalized using the intensity distribution (mean and standard deviation) computed from the CC-CCII dataset. This normalization aligns the brightness and contrast levels of MosMed images with those of CC-CCII, minimizing discrepancies caused by differences in image acquisition protocols or equipment. This approach, known as **domain adaptation via distribution matching**, enhances the model's ability to generalize by reducing reliance on dataset-specific artifacts and emphasizing anatomical and pathological features.

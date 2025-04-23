@@ -1,7 +1,3 @@
-# %% [markdown]
-# ### Train CLIP Binary Model in the Cloud
-# This notebook sets up and submits an Azure ML job to train the CLIP‐based binary model.
-# It uses the training script at "scripts/train/train_clip_binary.py".
 
 # %%
 from dotenv import load_dotenv
@@ -31,8 +27,8 @@ ml_client = MLClient(
 )
 
 # Create or get the GPU cluster
-# gpu_compute_target = "gpuclutercentralindia"  # or your preferred compute target
-gpu_compute_target = "gpuclustercentralindia2"  # or your preferred compute target
+gpu_compute_target = "gpuclutercentralindia"  # or your preferred compute target
+# gpu_compute_target = "gpuclustercentralindia2"  # or your preferred compute target
 try:
     gpu_cluster = ml_client.compute.get(gpu_compute_target)
     print(f"You already have a cluster named {gpu_compute_target}, we'll reuse it as is.")

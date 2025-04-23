@@ -154,9 +154,6 @@ In multiclass classification — especially with imbalanced datasets — macro a
 Given the clinical relevance of underrepresented conditions, macro metrics provide a fairer and more informative evaluation framework.
 
 ---
-Claro! Aqui está uma versão aprimorada da seção, com uma explicação clara sobre o uso de métricas macro e uma observação específica para o caso binário:
-
----
 
 ## 📐 Metric Calculation Details
 

@@ -23,7 +23,7 @@ from torch.utils.data import DataLoader, Subset
 from dotenv import load_dotenv
 
 # local imports
-from datasets import CCCCIIDatasetSequence2D
+from datasets import DatasetSequence2D
 from utils.download import download_from_blob, download_from_blob_with_access_key
 from utils.log_config import get_custom_logger
 
@@ -373,7 +373,7 @@ def main():
     # Load the dataset
     my_logger.info("Loading sequence dataset")
     sequence_length = args.sequence_length
-    my_dataset = CCCCIIDatasetSequence2D(dataset_folder, sequence_length=sequence_length, max_samples=args.max_samples)
+    my_dataset = DatasetSequence2D(dataset_folder, sequence_length=sequence_length, max_samples=args.max_samples)
     my_logger.info(f"Dataset loaded with max_samples={args.max_samples}, sequence_length={sequence_length}")
 
     # Extract labels

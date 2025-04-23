@@ -20,9 +20,9 @@ mkdir -p logs
 export PYTHONPATH=$(pwd)
 
 python -m scripts.train.train_vgg_binary \
-  --dataset ccccii \
+  --dataset ccccii_selected_nonsegmented_train \
   --num_epochs 1 \
-  --k 5 \
+  --k 3 \
   --i 0 \
   --batch_size 16 \
   --learning_rate 0.0005 \

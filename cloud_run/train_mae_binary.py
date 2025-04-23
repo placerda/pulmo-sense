@@ -1,7 +1,3 @@
-# %% [markdown]
-# ### Train MAE Binary Model in the Cloud
-# This notebook sets up and submits an Azure ML job to train the MAE‐based binary model.
-# It uses the training script at "scripts/train/train_mae_binary.py".
 
 # %%
 from dotenv import load_dotenv
@@ -31,7 +27,8 @@ ml_client = MLClient(
 )
 
 # Create or get the GPU cluster
-gpu_compute_target = "gpuclustercentralindia3"  # or your preferred compute target
+gpu_compute_target = "gpuclustercentralindia2"
+# gpu_compute_target = "gpuclustercentralindia3"  # or your preferred compute target
 
 try:
     gpu_cluster = ml_client.compute.get(gpu_compute_target)
@@ -51,7 +48,6 @@ except Exception:
     gpu_cluster = ml_client.begin_create_or_update(gpu_cluster).result()
 print(f"AMLCompute with name {gpu_cluster.name} is created, the compute size is {gpu_cluster.size}")
 
-# %%
 # Azure ML environment and job setup
 custom_env_name = "custom-acpt-pytorch-113-cuda117:12"
 
@@ -67,7 +63,7 @@ inputs = {
     "learning_rate": 0.0005,
     "k": 5,
     "i": 0,
-    "dataset": "ccccii"
+    "dataset": "ccccii_selected_nonsegmented_train"
 }
 
 def get_display_name(base_name):

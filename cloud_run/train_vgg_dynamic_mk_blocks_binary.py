@@ -1,6 +1,6 @@
 # %% [markdown]
-# ### Train ViT Binary Model
-# This notebook sets up and submits an Azure ML job to train the Vision Transformer model for binary classification.
+# ### Train VGG Dynamic Multi-Kernel Model
+# This notebook sets up and submits an Azure ML job to train the DynamicKernelVGG binary model.
 
 # %%
 from dotenv import load_dotenv
@@ -30,9 +30,7 @@ ml_client = MLClient(
 )
 
 # Create or get the GPU cluster
-# gpu_compute_target = "gpucluteruk"
-gpu_compute_target = "gpuclustercentralindia3"
-
+gpu_compute_target = "gpuclutercentralindia"
 try:
     gpu_cluster = ml_client.compute.get(gpu_compute_target)
     print(f"You already have a cluster named {gpu_compute_target}, we'll reuse it as is.")
@@ -51,6 +49,8 @@ except Exception:
     gpu_cluster = ml_client.begin_create_or_update(gpu_cluster).result()
 print(f"AMLCompute with name {gpu_cluster.name} is created, the compute size is {gpu_cluster.size}")
 
+# %%
+# Azure ML environment and job setup
 custom_env_name = "custom-acpt-pytorch-113-cuda117:12"
 
 env_vars = {
@@ -59,36 +59,37 @@ env_vars = {
     'BLOB_CONTAINER': os.getenv("BLOB_CONTAINER")
 }
 
-inputs = {
-    "num_epochs": 20,
-    "batch_size": 16,
-    "learning_rate": 0.0005,
-    "k": 5,
-    "i": 0,
-    "dataset": "ccccii_selected_nonsegmented_train"
-}
-
 def get_display_name(base_name):
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     return f"{base_name} {current_time}"
 
-experiment_name = "vit_binary"
+experiment_name = "vgg_dynamic_mk_blocks_binary"
+
+# Define inputs for the job
+inputs = {
+    "num_epochs": 20,
+    "batch_size": 16,
+    "learning_rate": 0.0005,
+    "dataset": "ccccii"
+}
+
 display_name = get_display_name(experiment_name)
 
+# Adjusted command:
+# - Uses --dataset instead of --dataset
+# - Adds --model_save_path pointing to ./outputs/best_dynamic_vgg.pth
 job = command(
     inputs=inputs,
     compute=gpu_compute_target,
     environment=custom_env_name,
     code="../",  # location of source code
     command=(
-        "python -m scripts.train.train_vit_binary "
-        "--run_cloud "
+        "python -m scripts.train.vgg_dynamic_mk_blocks "
         "--dataset ${{inputs.dataset}} "
-        "--k ${{inputs.k}} "
-        "--i ${{inputs.i}} "
-        "--num_epochs ${{inputs.num_epochs}} "
+        "--epochs ${{inputs.num_epochs}} "
         "--batch_size ${{inputs.batch_size}} "
-        "--learning_rate ${{inputs.learning_rate}} "
+        "--lr ${{inputs.learning_rate}} "
+        "--model_save_path ./outputs/best_dynamic_vgg.pth"
     ),
     environment_variables=env_vars,
     experiment_name=experiment_name,
@@ -98,7 +99,6 @@ job = command(
 
 submitted_job = ml_client.jobs.create_or_update(job)
 
-# Extract auto-generated job name from the job ID
 job_name = submitted_job.id.split("/")[-1]
 print(f"Submitted job {display_name} ({job_name}) to Azure ML")
 

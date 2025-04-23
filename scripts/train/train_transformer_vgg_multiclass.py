@@ -21,7 +21,7 @@ from torch.utils.data import DataLoader, Subset
 from dotenv import load_dotenv
 
 # local imports
-from datasets import CCCCIIDatasetSequence2D
+from datasets import DatasetSequence2D
 from utils.download import download_from_blob, download_from_blob_with_access_key
 from utils.log_config import get_custom_logger
 
@@ -340,7 +340,7 @@ def main():
         download_from_blob(storage_account, storage_key, container_name, dataset_folder)
 
     # load dataset
-    my_dataset = CCCCIIDatasetSequence2D(dataset_folder, sequence_length=args.sequence_length, max_samples=args.max_samples)
+    my_dataset = DatasetSequence2D(dataset_folder, sequence_length=args.sequence_length, max_samples=args.max_samples)
     labels = my_dataset.labels
     if args.i < 0 or args.i >= args.k:
         raise ValueError(f"Fold index i={args.i} invalid for k={args.k} folds.")

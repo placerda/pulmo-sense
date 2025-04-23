@@ -16,7 +16,7 @@ from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix
 import matplotlib.pyplot as plt
 import random
 
-from datasets.ccccii_dataset import CCCIIIDataset3D
+from datasets.raster_dataset import Dataset3D
 from utils.download import download_from_blob
 from utils.log_config import get_custom_logger
 
@@ -253,7 +253,7 @@ def main():
     # Start Run
     mlflow.start_run()
 
-    my_dataset = CCCIIIDataset3D(dataset_folder, max_samples=args.max_samples)
+    my_dataset = Dataset3D(dataset_folder, max_samples=args.max_samples)
 
     # Extract labels from the dataset
 
