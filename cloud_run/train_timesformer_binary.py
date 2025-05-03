@@ -1,22 +1,22 @@
 # %% [markdown]
-# ### Train LSTM VGG Binary Model
-# This notebook submits an Azure ML job to train the LSTM with VGG features model for binary classification.
-# The pretrained VGG weights are passed via the --vgg_model_path argument.
-# %% 
+# ### Train TimeSformer Binary Model
+# This script submits an Azure ML job to train the TimeSformer model for binary classification (NCP vs Normal).
+# It uses your `scripts/train/train_timesformer_binary.py` entrypoint.
+
+# %%
 from dotenv import load_dotenv
 from datetime import datetime
 import os
 
-# Load environment variables
+# Azure ML SDK imports
+from azure.ai.ml import MLClient, command
+from azure.ai.ml.entities import AmlCompute
+from azure.identity import DefaultAzureCredential
+
+# Load environment variables from .env
 load_dotenv()
 
-# Azure ML imports
-from azure.ai.ml import MLClient
-from azure.identity import DefaultAzureCredential
-from azure.ai.ml.entities import AmlCompute
-from azure.ai.ml import command
-
-# Configure the Azure workspace and authentication
+# Workspace configuration
 subscription_id = os.getenv("AZURE_SUBSCRIPTION_ID")
 resource_group_name = os.getenv("AZURE_RESOURCE_GROUP")
 workspace_name = os.getenv("AZURE_WORKSPACE_NAME")
@@ -29,13 +29,15 @@ ml_client = MLClient(
     workspace_name=workspace_name,
 )
 
+
 # Configure run parameters
 
 # Create or get the GPU cluster
 # gpu_compute_target = "gpucluteruk"
-# gpu_compute_target = "gpuclustercentralindia3"
 gpu_compute_target = "gpuclutercentralindia"
-experiment_name = "lstm_vgg_binary"
+# gpu_compute_target = "gpuclustercentralindia2"
+# gpu_compute_target = "gpuclustercentralindia3"
+experiment_name = "timesformer_binary"
 dataset_name = "ccccii"
 # fold = "full"
 # train_dir = f"ccccii_selected_nonsegmented_train"
@@ -43,14 +45,12 @@ dataset_name = "ccccii"
 fold = "1"
 train_dir = f"ccccii_selected_nonsegmented_fold_{fold}_train"
 val_dir= f"ccccii_selected_nonsegmented_fold_{fold}_val"
-pretrained_binary_vgg_model_uri = "https://myexperiments0584390316.blob.core.windows.net/azureml/ExperimentRun/dcid.silly_moon_zlqllh5djy/outputs/vgg_binary_3epoch_0.00050lr_0.967rec.pth"
 
 try:
     gpu_cluster = ml_client.compute.get(gpu_compute_target)
-    print(f"You already have a cluster named {gpu_compute_target}, we'll reuse it as is.")
+    print(f"Reusing existing cluster: {gpu_compute_target}")
 except Exception:
-    print("Creating a new GPU compute target...")
-    from azure.ai.ml.entities import AmlCompute
+    print(f"Creating new GPU cluster: {gpu_compute_target}")
     gpu_cluster = AmlCompute(
         name=gpu_compute_target,
         type="amlcompute",
@@ -61,45 +61,49 @@ except Exception:
         tier="Dedicated",
     )
     gpu_cluster = ml_client.begin_create_or_update(gpu_cluster).result()
-print(f"AMLCompute with name {gpu_cluster.name} is created, compute size is {gpu_cluster.size}")
+print(f"Cluster ready: {gpu_cluster.name} ({gpu_cluster.size})")
 
-# Azure ML environment and job setup
+# Azure ML environment (must have PyTorch + CUDA)
 custom_env_name = "custom-acpt-pytorch-113-cuda117:12"
+
+# Pass-through environment variables for data download
 env_vars = {
-    'AZURE_STORAGE_ACCOUNT': os.getenv("AZURE_STORAGE_ACCOUNT"),
-    'AZURE_STORAGE_KEY': os.getenv("AZURE_STORAGE_KEY"),
-    'BLOB_CONTAINER': os.getenv("BLOB_CONTAINER")
+    "AZURE_STORAGE_ACCOUNT": os.getenv("AZURE_STORAGE_ACCOUNT"),
+    "AZURE_STORAGE_KEY": os.getenv("AZURE_STORAGE_KEY"),
+    "BLOB_CONTAINER": os.getenv("BLOB_CONTAINER"),
 }
 
-def get_display_name(base_name):
-    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    return f"{base_name} {current_time}"
+print(" key: ", os.getenv("AZURE_STORAGE_KEY")[:5], "..." if len(os.getenv("AZURE_STORAGE_KEY")) > 5 else "")
 
+def get_display_name(base_name: str) -> str:
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return f"{base_name} {ts}"
+
+
+# Inputs to the training script
 inputs = {
     "train_dir": train_dir,
     "val_dir": val_dir,
     "num_epochs": 20,
     "batch_size": 16,
     "learning_rate": 0.0005,
-    "sequence_length": 30,
-    "vgg_model_path": pretrained_binary_vgg_model_uri
+    "sequence_length": 30,    
 }
 
 job = command(
     inputs=inputs,
     compute=gpu_compute_target,
     environment=custom_env_name,
-    code="../",  # location of your source code
+    code="../",  # point to repo root so `scripts/train/train_timesformer_binary.py` is on PYTHONPATH
     command=(
-        "python -m scripts.train.train_lstm_vgg_binary "
-        "--sequence_length ${{inputs.sequence_length}} "
+        "python -m scripts.train.train_timesformer_binary "
+        "--train_dir ${{inputs.train_dir}} "
+        "--val_dir ${{inputs.val_dir}} "
         "--num_epochs ${{inputs.num_epochs}} "
         "--batch_size ${{inputs.batch_size}} "
         "--learning_rate ${{inputs.learning_rate}} "
-        "--train_dir ${{inputs.train_dir}} "
-        "--val_dir ${{inputs.val_dir}} "
-        "--vgg_model_path ${{inputs.vgg_model_path}} "
-    ),    
+        "--sequence_length ${{inputs.sequence_length}} "        
+    ),      
     environment_variables=env_vars,
     experiment_name=experiment_name,
     display_name=get_display_name(experiment_name),
@@ -109,7 +113,7 @@ job = command(
 )
 
 submitted_job = ml_client.jobs.create_or_update(job)
-job_name = submitted_job.id.split("/")[-1]
-print(f"Submitted job {get_display_name(experiment_name)} ({job_name}) to Azure ML")
+job_id = submitted_job.name or submitted_job.id
+print(f"Submitted job {get_display_name(experiment_name)} (ID: {job_id})")
 
 # %%

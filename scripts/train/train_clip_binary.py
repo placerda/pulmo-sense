@@ -1,186 +1,209 @@
 #!/usr/bin/env python
 """
-Train CLIP-based binary classification model using pretrained HuggingFace CLIP vision encoder.
-Handles grayscale images by replicating to RGB, resized to (224,224).
-Ensures patient-level stratification for training and validation splits.
+Train CLIP-based binary classification model
+
+This script trains a binary classifier using a pretrained HuggingFace CLIP vision encoder.
+It handles single-channel input by replicating to 3 channels, resizing to 224×224,
+downloads separate training and validation directories, and evaluates on sequences of slices.
 """
 
 import argparse
 import os
 import time
-import traceback
-import random
 
 import mlflow
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader, Subset
-from sklearn.model_selection import StratifiedKFold
-from sklearn.metrics import recall_score, precision_score, f1_score, roc_curve, auc, confusion_matrix, ConfusionMatrixDisplay
 import matplotlib.pyplot as plt
+from torch.utils.data import DataLoader
+from sklearn.metrics import (
+    precision_score, recall_score, f1_score,
+    confusion_matrix, ConfusionMatrixDisplay,
+    roc_curve, auc
+)
 from dotenv import load_dotenv
+from transformers import CLIPModel
 
 from datasets.raster_dataset import Dataset2DBinary
+from datasets import DatasetSequence2DBinary
 from utils.download import download_from_blob
 from utils.log_config import get_custom_logger
-from transformers import CLIPModel
 
 my_logger = get_custom_logger('train_clip_binary')
 
+
 class CLIPBinaryModel(nn.Module):
-    def __init__(self, num_classes=2, model_name="openai/clip-vit-base-patch32"):
+    """
+    CLIP wrapper for binary classification.
+    """
+    def __init__(self, model_name: str, num_classes: int = 2):
         super().__init__()
+        # load vision encoder
         self.clip = CLIPModel.from_pretrained(model_name)
         hidden_size = self.clip.config.vision_config.hidden_size
         self.classifier = nn.Linear(hidden_size, num_classes)
-    
+
     def forward(self, x):
+        # replicate single channel to 3 and resize
         x = x.repeat(1, 3, 1, 1)
-        x = torch.nn.functional.interpolate(x, size=(224, 224), mode='bilinear', align_corners=False)
+        x = nn.functional.interpolate(x, size=(224, 224), mode='bilinear', align_corners=False)
         vision_outputs = self.clip.vision_model(pixel_values=x)
-        pooled_output = vision_outputs.pooler_output
-        return self.classifier(pooled_output)
+        pooled = vision_outputs.pooler_output
+        return self.classifier(pooled)
 
-def train_model(train_loader, val_loader, epochs, lr):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    my_logger.info(f"Training on device: {device}")
 
-    model = CLIPBinaryModel(num_classes=2).to(device)
+def train_model(train_loader, val_seq_loader, num_epochs, learning_rate, model_name):
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    my_logger.info(f"Starting CLIP ({model_name}) binary training on {device}")
+    model = CLIPBinaryModel(model_name=model_name).to(device)
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-5)
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-5)
 
-    best_recall, patience, epochs_no_improve = 0.0, 3, 0
+    patience = 3
+    no_improve = 0
+    best_recall = 0.0
+    best_epoch = 0
+    best_metrics = {}
+    best_model_path = None
+    best_cm_path = None
     start_time = time.time()
 
-    try:
-        for epoch in range(epochs):
-            model.train()
-            train_loss, correct, total = 0, 0, 0
-            my_logger.info(f"Epoch {epoch+1}/{epochs}")
+    for epoch in range(1, num_epochs + 1):
+        my_logger.info(f"=== Epoch {epoch}/{num_epochs} ===")
 
-            for inputs, _, labels in train_loader:
-                inputs, labels = inputs.to(device), labels.to(device)
-                outputs = model(inputs)
-                loss = criterion(outputs, labels)
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
+        # — Training —
+        model.train()
+        running_loss = 0.0
+        running_correct = 0
+        running_total = 0
+        for inputs, _, labels in train_loader:
+            inputs, labels = inputs.to(device), labels.to(device)
+            logits = model(inputs)
+            loss = criterion(logits, labels)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
 
-                train_loss += loss.item() * labels.size(0)
-                correct += (outputs.argmax(1) == labels).sum().item()
-                total += labels.size(0)
+            running_loss += loss.item() * labels.size(0)
+            preds = logits.argmax(dim=1)
+            running_correct += preds.eq(labels).sum().item()
+            running_total += labels.size(0)
 
-            train_loss /= total
-            train_acc = correct / total
-            mlflow.log_metrics({"train_loss": train_loss, "train_accuracy": train_acc}, step=epoch)
-            my_logger.info(f"Train loss: {train_loss:.4f}, Acc: {train_acc:.4f}")
+        train_loss = running_loss / running_total
+        train_acc = 100.0 * running_correct / running_total
+        mlflow.log_metric('train_loss', train_loss, step=epoch)
+        mlflow.log_metric('train_accuracy', train_acc, step=epoch)
+        my_logger.info(f"Train Loss={train_loss:.4f}, Acc={train_acc:.2f}%")
 
-            model.eval()
-            val_loss, correct, total, all_labels, all_probs = 0, 0, 0, [], []
+        # — Validation (sequence-level) —
+        model.eval()
+        all_labels, all_preds, all_probs = [], [], []
+        with torch.no_grad():
+            for seq_slices, seq_labels in val_seq_loader:
+                B, L, C, H, W = seq_slices.shape
+                flat = seq_slices.view(B * L, C, H, W).to(device)
+                logits = model(flat)
+                probs = torch.softmax(logits, dim=1).view(B, L, -1)
+                avg_prob = probs.mean(dim=1)
+                preds = avg_prob.argmax(dim=1)
 
-            with torch.no_grad():
-                for inputs, _, labels in val_loader:
-                    inputs, labels = inputs.to(device), labels.to(device)
-                    outputs = model(inputs)
-                    val_loss += criterion(outputs, labels).item() * labels.size(0)
-                    probs = torch.softmax(outputs, dim=1)
-                    preds = probs.argmax(1)
-                    correct += (preds == labels).sum().item()
-                    total += labels.size(0)
-                    all_labels.extend(labels.cpu().numpy())
-                    all_probs.extend(probs.cpu().numpy())
+                all_labels.extend(seq_labels.cpu().numpy())
+                all_preds.extend(preds.cpu().numpy())
+                all_probs.extend(avg_prob.cpu().numpy())
 
-            val_loss /= total
-            val_acc = correct / total
-            val_preds = np.argmax(all_probs, axis=1)
-            val_recall = recall_score(all_labels, val_preds, zero_division=0)
-            val_precision = precision_score(all_labels, val_preds, zero_division=0)
-            val_f1 = f1_score(all_labels, val_preds, zero_division=0)
-            val_auc = auc(*roc_curve(all_labels, np.array(all_probs)[:,0], pos_label=0)[:2])
+        val_recall = recall_score(all_labels, all_preds, average='binary', pos_label=1, zero_division=0)
+        val_precision = precision_score(all_labels, all_preds, average='binary', pos_label=1, zero_division=0)
+        val_f1 = f1_score(all_labels, all_preds, average='binary', pos_label=1, zero_division=0)
+        try:
+            fpr, tpr, _ = roc_curve(all_labels, [p[1] for p in all_probs], pos_label=1)
+            val_auc = auc(fpr, tpr)
+        except Exception as e:
+            my_logger.error(f"AUC computation failed: {e}")
+            val_auc = 0.0
 
-            mlflow.log_metrics({
-                "val_loss": val_loss, "val_accuracy": val_acc,
-                "val_recall": val_recall, "val_precision": val_precision,
-                "val_f1": val_f1, "val_auc": val_auc
-            }, step=epoch)
+        mlflow.log_metric('val_recall', val_recall, step=epoch)
+        mlflow.log_metric('val_precision', val_precision, step=epoch)
+        mlflow.log_metric('val_f1', val_f1, step=epoch)
+        mlflow.log_metric('val_auc', val_auc, step=epoch)
+        my_logger.info(f"Val Recall={val_recall:.2f}, Precision={val_precision:.2f}, F1={val_f1:.2f}, AUC={val_auc:.2f}")
 
-            if val_recall > best_recall:
-                best_recall, epochs_no_improve = val_recall, 0
-                prefix = f"outputs/clip_binary_{epoch+1}_{lr:.5f}_{val_recall:.3f}"
-                os.makedirs("outputs", exist_ok=True)
-                torch.save(model.state_dict(), f"{prefix}.pth")
-                cm = confusion_matrix(all_labels, val_preds)
-                ConfusionMatrixDisplay(cm).plot(cmap='Blues')
-                plt.savefig(f"{prefix}_cm.png")
-                plt.close()
-            else:
-                epochs_no_improve += 1
-                if epochs_no_improve >= patience:
-                    my_logger.info("Early stopping triggered.")
-                    break
+        # — Save best model by recall —
+        prefix = f"clip_{model_name.replace('/', '_')}_{epoch}ep_{learning_rate:.5f}lr_{val_recall:.3f}rec"
+        os.makedirs('outputs', exist_ok=True)
+        model_path = f"outputs/{prefix}.pth"
+        if val_recall > best_recall:
+            best_recall = val_recall
+            best_epoch = epoch
+            best_metrics = {'loss': train_loss, 'acc': train_acc, 'precision': val_precision, 'f1': val_f1, 'auc': val_auc}
+            best_model_path = model_path
+            torch.save(model.state_dict(), model_path)
+            my_logger.info(f"New best model saved: {model_path}")
 
-        my_logger.info(f"Training completed in {time.time()-start_time:.2f}s")
+            cm = confusion_matrix(all_labels, all_preds)
+            disp = ConfusionMatrixDisplay(confusion_matrix=cm)
+            disp.plot(cmap=plt.cm.Blues)
+            best_cm_path = f"outputs/{prefix}_confmat.png"
+            plt.savefig(best_cm_path)
+            plt.close()
+            my_logger.info(f"Confusion matrix saved: {best_cm_path}")
+            no_improve = 0
+        else:
+            no_improve += 1
+            if no_improve >= patience:
+                my_logger.info("Early stopping triggered.")
+                break
 
-    except Exception as e:
-        my_logger.error(f"Training error: {e}")
-        my_logger.error(traceback.format_exc())
+    total_time = time.time() - start_time
+    my_logger.info(f"Training completed in {total_time:.2f}s")
+
+    # — Log best-model metrics —
+    mlflow.log_metrics({
+        'best_epoch': best_epoch,
+        **{f"best_{k}": v for k, v in best_metrics.items()}
+    }, step=best_epoch)
+    my_logger.info(f"Best Epoch: {best_epoch}, Metrics: {best_metrics}")
+
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--num_epochs", type=int, default=20)
-    parser.add_argument("--batch_size", type=int, default=16)
-    parser.add_argument("--learning_rate", type=float, default=0.0005)
-    parser.add_argument("--k", type=int, default=5)
-    parser.add_argument("--i", type=int, default=0)
-    parser.add_argument('--dataset', default='ccccii')
-    parser.add_argument('--run_cloud', action='store_true')
-    parser.add_argument('--max_samples', type=int, default=0)
+    parser = argparse.ArgumentParser(description='Train CLIP binary model')
+    parser.add_argument('--train_dir', type=str, required=True, help='Training data directory')
+    parser.add_argument('--val_dir',   type=str, required=True, help='Validation data directory')
+    parser.add_argument('--num_epochs', type=int,   default=20, help='Number of epochs')
+    parser.add_argument('--batch_size', type=int,   default=16, help='Batch size')
+    parser.add_argument('--learning_rate', type=float, default=0.0005, help='Learning rate')
+    parser.add_argument('--sequence_length', type=int, default=30, help='Slices per sequence for validation')
+    parser.add_argument('--model_name', type=str, default='openai/clip-vit-base-patch32', help='CLIP model name')
     args = parser.parse_args()
+    my_logger.info(f"Args: {args}")
+
+    load_dotenv()
+    account = os.getenv('AZURE_STORAGE_ACCOUNT')
+    key = os.getenv('AZURE_STORAGE_KEY')
+    container = os.getenv('BLOB_CONTAINER')
+    my_logger.info('Downloading data from blob storage')
+    download_from_blob(account, key, container, args.train_dir)
+    download_from_blob(account, key, container, args.val_dir)
 
     mlflow.start_run()
-    dataset_folder = f"data/{args.dataset}"
-    if args.run_cloud:
-        load_dotenv()
-        download_from_blob(
-            os.getenv('AZURE_STORAGE_ACCOUNT'),
-            os.getenv('AZURE_STORAGE_KEY'),
-            os.getenv('BLOB_CONTAINER'),
-            dataset_folder
-        )
+    train_ds = Dataset2DBinary(args.train_dir)
+    val_seq_ds = DatasetSequence2DBinary(dataset_folder=args.val_dir, sequence_length=args.sequence_length)
 
-    dataset = Dataset2DBinary(dataset_folder, max_samples=args.max_samples)
+    train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True)
+    val_seq_loader = DataLoader(val_seq_ds, batch_size=args.batch_size, shuffle=False)
+    my_logger.info(f"Loaded {len(train_ds)} train samples and {len(val_seq_ds)} validation sequences.")
 
-    patient_ids = [int(sample[1]) for sample in dataset]
-    labels = [int(sample[2]) for sample in dataset]
+    train_model(
+        train_loader,
+        val_seq_loader,
+        num_epochs    = args.num_epochs,
+        learning_rate = args.learning_rate,
+        model_name    = args.model_name
+    )
 
-    patient_label_dict = {}
-    for pid, lbl in zip(patient_ids, labels):
-        patient_label_dict[pid] = lbl  # Assumes one label per patient
-
-    unique_patients = list(patient_label_dict.keys())
-    patient_labels = [patient_label_dict[pid] for pid in unique_patients]
-
-    if args.i < 0 or args.i >= args.k:
-        raise ValueError(f"Fold 'i' must be between 0 and {args.k - 1}.")
-
-    skf = StratifiedKFold(args.k, shuffle=True, random_state=42)
-    train_patient_idx, val_patient_idx = list(skf.split(unique_patients, patient_labels))[args.i]
-
-    train_patients = {unique_patients[idx] for idx in train_patient_idx}
-    val_patients = {unique_patients[idx] for idx in val_patient_idx}
-
-    train_idx = [i for i, pid in enumerate(patient_ids) if pid in train_patients]
-    val_idx = [i for i, pid in enumerate(patient_ids) if pid in val_patients]
-
-    my_logger.info(f"Training samples: {len(train_idx)}, Validation samples: {len(val_idx)}")
-
-    train_loader = DataLoader(Subset(dataset, train_idx), batch_size=args.batch_size, shuffle=True)
-    val_loader = DataLoader(Subset(dataset, val_idx), batch_size=args.batch_size, shuffle=False)
-
-    train_model(train_loader, val_loader, args.num_epochs, args.learning_rate)
     mlflow.end_run()
+    my_logger.info('MLflow run ended')
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

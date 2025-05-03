@@ -29,9 +29,23 @@ ml_client = MLClient(
     workspace_name=workspace_name,
 )
 
+# Configure run parameters
+
 # Create or get the GPU cluster
-gpu_compute_target = "gpuclustercentralindia3"
-# gpu_compute_target = "gpuclutercentralindia"
+# gpu_compute_target = "gpucluteruk"
+# gpu_compute_target = "gpuclustercentralindia3"
+gpu_compute_target = "gpuclutercentralindia"
+experiment_name = "lstm_attention_vgg_binary"
+dataset_name = "ccccii"
+# fold = "full"
+# train_dir = f"ccccii_selected_nonsegmented_train"
+# val_dir= f"ccccii_selected_nonsegmented_val"
+fold = "1"
+train_dir = f"ccccii_selected_nonsegmented_fold_{fold}_train"
+val_dir= f"ccccii_selected_nonsegmented_fold_{fold}_val"
+pretrained_binary_vgg_model_uri = "https://myexperiments0584390316.blob.core.windows.net/azureml/ExperimentRun/dcid.silly_moon_zlqllh5djy/outputs/vgg_binary_3epoch_0.00050lr_0.967rec.pth"
+
+
 try:
     gpu_cluster = ml_client.compute.get(gpu_compute_target)
     print(f"You already have a cluster named {gpu_compute_target}, we'll reuse it as is.")
@@ -55,24 +69,21 @@ custom_env_name = "custom-acpt-pytorch-113-cuda117:12"
 env_vars = {
     'AZURE_STORAGE_ACCOUNT': os.getenv("AZURE_STORAGE_ACCOUNT"),
     'AZURE_STORAGE_KEY': os.getenv("AZURE_STORAGE_KEY"),
-    'BLOB_CONTAINER': os.getenv("BLOB_CONTAINER"),
-    'PRETRAINED_VGG_MODEL_URI': os.getenv('PRETRAINED_BINARY_VGG_MODEL_URI')
+    'BLOB_CONTAINER': os.getenv("BLOB_CONTAINER")
 }
 
 def get_display_name(base_name):
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     return f"{base_name} {current_time}"
 
-experiment_name = "lstm_attention_vgg_binary"
-
 inputs = {
-    'network': "lstm_attention_vgg_binary",
+    "train_dir": train_dir,
+    "val_dir": val_dir,
     "num_epochs": 20,
     "batch_size": 16,
     "learning_rate": 0.0005,
-    "k": 5,
-    "i": 0,
-    "dataset": "ccccii"
+    "sequence_length": 30,
+    "vgg_model_path": pretrained_binary_vgg_model_uri
 }
 
 job = command(
@@ -82,18 +93,20 @@ job = command(
     code="../",  # Location of your source code
     command=(
         "python -m scripts.train.train_lstm_attention_vgg_binary "
-        "--run_cloud "
-        "--dataset ${{inputs.dataset}} "
-        "--k ${{inputs.k}} "
-        "--i ${{inputs.i}} "
+        "--sequence_length ${{inputs.sequence_length}} "
         "--num_epochs ${{inputs.num_epochs}} "
         "--batch_size ${{inputs.batch_size}} "
         "--learning_rate ${{inputs.learning_rate}} "
-    ),
+        "--train_dir ${{inputs.train_dir}} "
+        "--val_dir ${{inputs.val_dir}} "
+        "--vgg_model_path ${{inputs.vgg_model_path}} "
+    ),      
     environment_variables=env_vars,
     experiment_name=experiment_name,
     display_name=get_display_name(experiment_name),
-    tags={key: str(value) for key, value in inputs.items()}
+    tags= { 'dataset': dataset_name} 
+        | {'fold': fold} 
+        | {key: str(value) for key, value in inputs.items()}
 )
 
 submitted_job = ml_client.jobs.create_or_update(job)

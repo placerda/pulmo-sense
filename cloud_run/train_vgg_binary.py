@@ -26,10 +26,27 @@ ml_client = MLClient(
     workspace_name=workspace_name,
 )
 
+# Configure run parameters
+
 # Create or get the GPU cluster
-# gpu_compute_target = "gpucluteruk"
+# gpu_compute_target = "gpuclustercentralindia"
+gpu_compute_target = "gpuclusterwesteurope1"
+# gpu_compute_target = "2"
 # gpu_compute_target = "gpuclustercentralindia3"
-gpu_compute_target = "gpuclutercentralindia"
+# gpu_compute_target = "gpuclusterukwest4"
+# gpu_compute_target = "gpuclusterswedencentral5"
+fold = "1"
+
+
+experiment_name = "vgg_binary"
+dataset_name = "ccccii"
+# fold = "full"
+# train_dir = f"ccccii_selected_nonsegmented_train"
+# val_dir= f"ccccii_selected_nonsegmented_val"
+train_dir = f"ccccii_selected_nonsegmented_fold_{fold}_train"
+val_dir= f"ccccii_selected_nonsegmented_fold_{fold}_val"
+
+
 try:
     gpu_cluster = ml_client.compute.get(gpu_compute_target)
     print(f"You already have a cluster named {gpu_compute_target}, we'll reuse it as is.")
@@ -40,7 +57,7 @@ except Exception:
         name=gpu_compute_target,
         type="amlcompute",
         size="Standard_ND96amsr_A100_v4",
-        min_instances=1,
+        min_instances=0,
         max_instances=4,
         idle_time_before_scale_down=180,
         tier="Dedicated",
@@ -61,15 +78,13 @@ def get_display_name(base_name):
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     return f"{base_name} {current_time}"
 
-experiment_name = "vgg_binary"
-
+# Parameters
 inputs = {
+    "train_dir": train_dir,
+    "val_dir": val_dir,
     "num_epochs": 20,
     "batch_size": 16,
-    "learning_rate": 0.0005,
-    "k": 5,
-    "i": 0,
-    "dataset": "ccccii_selected_nonsegmented_train"
+    "learning_rate": 0.0005
 }
 
 display_name=get_display_name(experiment_name)
@@ -81,10 +96,8 @@ job = command(
     code="../",  # location of source code
     command=(
         "python -m scripts.train.train_vgg_binary "
-        "--run_cloud "
-        "--dataset ${{inputs.dataset}} "
-        "--k ${{inputs.k}} "
-        "--i ${{inputs.i}} "
+        "--train_dir ${{inputs.train_dir}} "
+        "--val_dir ${{inputs.val_dir}} "
         "--num_epochs ${{inputs.num_epochs}} "
         "--batch_size ${{inputs.batch_size}} "
         "--learning_rate ${{inputs.learning_rate}} "
@@ -92,7 +105,9 @@ job = command(
     environment_variables=env_vars,
     experiment_name=experiment_name,
     display_name=display_name,
-    tags={key: str(value) for key, value in inputs.items()}
+    tags= { 'dataset': dataset_name} 
+        | {'fold': fold} 
+        | {key: str(value) for key, value in inputs.items()}
 )
 
 submitted_job = ml_client.jobs.create_or_update(job)

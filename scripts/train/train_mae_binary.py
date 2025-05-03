@@ -2,35 +2,33 @@
 """
 Train MAE-based binary model
 
-This script uses a pretrained Masked Autoencoder (MAE) model from timm
-for binary classification. It handles single–channel input by replicating it to 3 channels,
-resizes the image to (224,224), and performs training using the binary dataset.
-The positive class is assumed to be labeled as 0.
+This script trains a binary classifier using a pretrained Masked Autoencoder (MAE)
+from timm. It handles single-channel input by replicating to 3 channels,
+resizes to 224×224, downloads separate training and validation directories,
+and evaluates on sequences of slices.
 """
 
 import argparse
 import os
-import random
 import time
-import traceback
 
 import mlflow
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-
 import timm
-
-from torch.utils.data import DataLoader, Subset
-from dotenv import load_dotenv
-from sklearn.metrics import precision_score, recall_score, f1_score, confusion_matrix, ConfusionMatrixDisplay
-from sklearn.metrics import roc_curve, auc
-from sklearn.model_selection import StratifiedKFold
-
+from torch.utils.data import DataLoader
+from sklearn.metrics import (
+    precision_score, recall_score, f1_score,
+    confusion_matrix, ConfusionMatrixDisplay,
+    roc_curve, auc
+)
 import matplotlib.pyplot as plt
+from dotenv import load_dotenv
 
 from datasets.raster_dataset import Dataset2DBinary
+from datasets import DatasetSequence2DBinary
 from utils.download import download_from_blob
 from utils.log_config import get_custom_logger
 
@@ -38,210 +36,200 @@ my_logger = get_custom_logger('train_mae_binary')
 
 class MAEModel(nn.Module):
     """
-    A binary classifier using a pretrained MAE model from timm.
-    It replicates single-channel input to 3 channels, resizes the image to (224,224),
-    and passes it through the MAE model for feature extraction and classification.
+    MAE wrapper for binary classification.
     """
-    def __init__(self, num_classes=2, model_name='vit_base_patch16_224.mae'):
-        super(MAEModel, self).__init__()
+    def __init__(self, model_name: str, num_classes: int = 2):
+        super().__init__()
+        # Use MAE variant from timm
         self.model = timm.create_model(model_name, pretrained=True, num_classes=num_classes)
-    
+
     def forward(self, x):
-        # x: [batch_size, 1, 512, 512] -> replicate to 3 channels
+        # replicate single channel to 3 channels and resize
         x = x.repeat(1, 3, 1, 1)
-        # Resize to (224,224) as expected by the model
-        x = torch.nn.functional.interpolate(x, size=(224, 224), mode='bilinear', align_corners=False)
+        x = nn.functional.interpolate(x, size=(224, 224), mode='bilinear', align_corners=False)
         return self.model(x)
 
-def train_model(train_loader, val_loader, num_epochs, learning_rate):
+
+def train_model(train_loader, val_seq_loader, num_epochs, learning_rate, model_name):
     start_time = time.time()
-    my_logger.info("Starting MAE binary training")
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    my_logger.info(f"Starting MAE ({model_name}) binary training on {device}")
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    my_logger.info(f"Using device: {device}")
+    model = MAEModel(model_name=model_name).to(device)
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-5)
 
-    try:
-        model = MAEModel(num_classes=2).to(device)
-        criterion = nn.CrossEntropyLoss()
-        optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-5)
+    # early stopping
+    patience = 3
+    no_improve = 0
+    best_recall = 0.0
+    best_epoch = 0
+    best_metrics = {'loss': None, 'acc': None, 'precision': None, 'f1': None, 'auc': None}
+    best_model_path = None
+    best_cm_path = None
 
-        early_stopping_patience = 3
-        epochs_without_improvement = 0
-        best_recall = 0.0
+    for epoch in range(1, num_epochs + 1):
+        my_logger.info(f"=== Epoch {epoch}/{num_epochs} ===")
+        # — Training —
+        model.train()
+        total_loss = 0.0
+        total_correct = 0
+        total_samples = 0
+        for i, (inputs, _, labels) in enumerate(train_loader):
+            inputs, labels = inputs.to(device), labels.to(device)
+            outputs = model(inputs)
+            loss = criterion(outputs, labels)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
 
-        for epoch in range(num_epochs):
-            my_logger.info(f"=== Epoch {epoch+1}/{num_epochs} ===")
-            model.train()
-            total_loss, correct, total = 0, 0, 0
+            total_loss += loss.item() * labels.size(0)
+            preds = outputs.argmax(dim=1)
+            total_correct += preds.eq(labels).sum().item()
+            total_samples += labels.size(0)
 
-            for i, (inputs, _, labels) in enumerate(train_loader):
-                inputs, labels = inputs.to(device), labels.to(device)
-                outputs = model(inputs)
-                loss = criterion(outputs, labels)
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
+            if i % 50 == 0:
+                batch_acc = preds.eq(labels).float().mean().item()
+                my_logger.info(f"[Train] Batch {i}/{len(train_loader)} — Loss={loss.item():.4f}, Acc={batch_acc:.4f}")
 
-                total_loss += loss.item() * labels.size(0)
-                preds = outputs.argmax(dim=1)
-                correct += (preds == labels).sum().item()
-                total += labels.size(0)
+        train_loss = total_loss / total_samples
+        train_acc = 100.0 * total_correct / total_samples
+        my_logger.info(f"Epoch {epoch}: Train Loss={train_loss:.4f}, Train Acc={train_acc:.2f}%")
+        mlflow.log_metric("train_loss", train_loss, step=epoch)
+        mlflow.log_metric("train_accuracy", train_acc, step=epoch)
 
-                if i % 50 == 0:
-                    batch_acc = (preds == labels).float().mean().item()
-                    my_logger.info(f"[Train] Batch {i}/{len(train_loader)}: Loss={loss.item():.4f}, Acc={batch_acc:.4f}")
-            
-            train_loss = total_loss / total
-            train_acc = 100.0 * correct / total
+        # — Validation (sequence-level) —
+        model.eval()
+        val_loss = 0.0
+        val_correct = 0
+        val_count = 0
+        all_labels = []
+        all_preds = []
+        all_probs = []
+        with torch.no_grad():
+            for seq_slices, seq_labels in val_seq_loader:
+                B, L, C, H, W = seq_slices.shape
+                seq_slices = seq_slices.to(device)
+                labels = seq_labels.to(device)
 
-            my_logger.info(f"Epoch {epoch+1}: Train Loss={train_loss:.4f}, Train Acc={train_acc:.2f}%")
-            mlflow.log_metric("train_loss", train_loss, step=epoch)
-            mlflow.log_metric("train_accuracy", train_acc, step=epoch)
+                flat = seq_slices.view(B * L, C, H, W)
+                logits = model(flat).view(B, L, -1)
+                seq_logits = logits.mean(dim=1)
 
-            model.eval()
-            val_loss, val_correct, val_total = 0, 0, 0
-            all_labels, all_probs = [], []
+                loss = criterion(seq_logits, labels)
+                val_loss += loss.item() * B
 
-            with torch.no_grad():
-                for j, (inputs, _, labels) in enumerate(val_loader):
-                    inputs, labels = inputs.to(device), labels.to(device)
-                    outputs = model(inputs)
-                    loss = criterion(outputs, labels)
-                    val_loss += loss.item() * labels.size(0)
-                    probs = torch.softmax(outputs, dim=1)
-                    preds = probs.argmax(dim=1)
-                    val_correct += (preds == labels).sum().item()
-                    val_total += labels.size(0)
+                probs = torch.softmax(seq_logits, dim=1)
+                preds = probs.argmax(dim=1)
+                val_correct += preds.eq(labels).sum().item()
+                val_count += B
 
-                    all_labels.extend(labels.cpu().numpy())
-                    all_probs.extend(probs.cpu().numpy())
+                all_labels.extend(labels.cpu().numpy())
+                all_preds.extend(preds.cpu().numpy())
+                all_probs.extend(probs.cpu().numpy())
 
-            val_loss /= val_total
-            val_acc = 100.0 * val_correct / val_total
-            all_probs = np.array(all_probs)
-            val_preds = np.argmax(all_probs, axis=1)
+        val_loss /= val_count
+        val_acc = 100.0 * val_correct / val_count
+        all_labels = np.array(all_labels)
+        all_preds = np.array(all_preds)
+        all_probs = np.array(all_probs)
 
-            val_recall = recall_score(all_labels, val_preds, average='binary', zero_division=0)
-            val_precision = precision_score(all_labels, val_preds, average='binary', zero_division=0)
-            val_f1 = f1_score(all_labels, val_preds, average='binary', zero_division=0)
-            try:
-                positive_probs = all_probs[:, 0]
-                fpr, tpr, _ = roc_curve(all_labels, positive_probs, pos_label=0)
-                val_auc = auc(fpr, tpr)
-                my_logger.info("AUC computed using roc_curve with pos_label=0.")
-            except ValueError as e:
-                my_logger.error("Error computing AUC: %s", e)
-                val_auc = 0.0
+        val_recall = recall_score(all_labels, all_preds, average='binary', pos_label=1, zero_division=0)
+        val_precision = precision_score(all_labels, all_preds, average='binary', pos_label=1, zero_division=0)
+        val_f1 = f1_score(all_labels, all_preds, average='binary', pos_label=1, zero_division=0)
+        try:
+            fpr, tpr, _ = roc_curve(all_labels, all_probs[:, 1], pos_label=1)
+            val_auc = auc(fpr, tpr)
+        except Exception as e:
+            my_logger.error(f"AUC computation error: {e}")
+            val_auc = 0.0
 
-            my_logger.info(
-                f"Val Loss={val_loss:.4f}, Acc={val_acc:.2f}%, Recall={val_recall:.2f}, "
-                f"Precision={val_precision:.2f}, F1={val_f1:.2f}, AUC={val_auc:.2f}"
-            )
+        my_logger.info(
+            f"Epoch {epoch} Validation — Loss={val_loss:.4f}, Acc={val_acc:.2f}%, "
+            f"Recall={val_recall:.2f}, Precision={val_precision:.2f}, "
+            f"F1={val_f1:.2f}, AUC={val_auc:.2f}"
+        )
+        mlflow.log_metric("val_loss", val_loss, step=epoch)
+        mlflow.log_metric("val_accuracy", val_acc, step=epoch)
+        mlflow.log_metric("val_recall", val_recall, step=epoch)
+        mlflow.log_metric("val_precision", val_precision, step=epoch)
+        mlflow.log_metric("val_f1", val_f1, step=epoch)
+        mlflow.log_metric("val_auc", val_auc, step=epoch)
 
-            mlflow.log_metric("val_loss", val_loss, step=epoch)
-            mlflow.log_metric("val_accuracy", val_acc, step=epoch)
-            mlflow.log_metric("val_recall", val_recall, step=epoch)
-            mlflow.log_metric("val_precision", val_precision, step=epoch)
-            mlflow.log_metric("val_f1_score", val_f1, step=epoch)
-            mlflow.log_metric("val_auc", val_auc, step=epoch)
-
-            file_prefix = f"mae_binary_{epoch+1}epoch_{learning_rate:.5f}lr_{val_recall:.3f}rec"
+        # — Save best model by recall —
+        if val_recall > best_recall:
+            best_recall = val_recall
+            best_epoch = epoch
+            best_metrics = {'loss': val_loss, 'acc': val_acc, 'precision': val_precision, 'f1': val_f1, 'auc': val_auc}
+            prefix = f"mae_{model_name}_{epoch}epoch_{learning_rate:.5f}lr_{val_recall:.3f}rec"
             os.makedirs("outputs", exist_ok=True)
-            model_path = f"outputs/{file_prefix}.pth"
+            best_model_path = f"outputs/{prefix}.pth"
+            torch.save(model.state_dict(), best_model_path)
+            my_logger.info(f"New best model saved: {best_model_path}")
 
-            if val_recall > best_recall:
-                best_recall = val_recall
-                epochs_without_improvement = 0
-                torch.save(model.state_dict(), model_path)
-                my_logger.info(f"New best model saved as {model_path} with recall={val_recall:.3f}")
+            cm = confusion_matrix(all_labels, all_preds)
+            disp = ConfusionMatrixDisplay(confusion_matrix=cm)
+            disp.plot(cmap=plt.cm.Blues)
+            best_cm_path = f"outputs/{prefix}_confmat.png"
+            plt.savefig(best_cm_path)
+            plt.close()
+            my_logger.info(f"Confusion matrix saved: {best_cm_path}")
+            no_improve = 0
+        else:
+            no_improve += 1
 
-                cm = confusion_matrix(all_labels, val_preds)
-                disp = ConfusionMatrixDisplay(confusion_matrix=cm)
-                cm_path = f"outputs/{file_prefix}_confmat.png"
-                disp.plot(cmap=plt.cm.Blues)
-                plt.savefig(cm_path)
-                plt.close()
-                my_logger.info(f"Confusion matrix saved as {cm_path}")
-            else:
-                epochs_without_improvement += 1
+        if no_improve >= patience:
+            my_logger.info("Early stopping triggered.")
+            break
 
-            if epochs_without_improvement >= early_stopping_patience:
-                my_logger.info("Early stopping triggered.")
-                break
+    total_time = time.time() - start_time
+    my_logger.info(f"Training completed in {total_time:.2f}s")
 
-        my_logger.info("Finished Training MAE binary model.")
-        my_logger.info(f"Total training time: {time.time() - start_time:.2f} seconds")
-    except Exception as e:
-        my_logger.error("Error during training: %s", str(e))
-        my_logger.error(traceback.format_exc())
+    # — Log best-model metrics —
+    mlflow.log_metrics({
+        "best_epoch": best_epoch,
+        **{f"best_{k}": v for k, v in best_metrics.items()}
+    }, step=best_epoch)
+    my_logger.info(f"Best model metrics: epoch {best_epoch}, {best_metrics}")
+
 
 def main():
-    my_logger.info(f"Torch version: {torch.__version__}")
-
     parser = argparse.ArgumentParser(description="Train MAE binary model")
-    parser.add_argument("--num_epochs", type=int, default=20, help="number of epochs to train")
-    parser.add_argument("--batch_size", type=int, default=16, help="batch size")
-    parser.add_argument("--learning_rate", type=float, default=0.0005, help="learning rate")
-    parser.add_argument("--k", type=int, default=5, help="number of folds for cross-validation")
-    parser.add_argument("--i", type=int, default=0, help="current fold index (0-based)")
-    parser.add_argument("--dataset", type=str, default="ccccii", help="Dataset name")
-    parser.add_argument("--run_cloud", action="store_true", help="Flag to indicate cloud mode")
-    parser.add_argument("--max_samples", type=int, default=0, help="Maximum number of samples to use")
+    parser.add_argument("--train_dir", type=str, required=True, help="Training data directory")
+    parser.add_argument("--val_dir", type=str, required=True, help="Validation data directory")
+    parser.add_argument("--num_epochs", type=int, default=20, help="Epochs")
+    parser.add_argument("--batch_size", type=int, default=16, help="Batch size")
+    parser.add_argument("--learning_rate", type=float, default=0.0005, help="Learning rate")
+    parser.add_argument("--sequence_length", type=int, default=30, help="Slices per sequence for validation")
+    parser.add_argument("--model_name", type=str, default="vit_base_patch16_224.mae", help="timm MAE model name")
     args = parser.parse_args()
     my_logger.info(f"Args: {args}")
-    my_logger.info(f"Current Working Directory: {os.getcwd()}")
+
+    load_dotenv()
+    account = os.getenv("AZURE_STORAGE_ACCOUNT")
+    key = os.getenv("AZURE_STORAGE_KEY")
+    container = os.getenv("BLOB_CONTAINER")
+    my_logger.info("Downloading training and validation data.")
+    download_from_blob(account, key, container, args.train_dir)
+    download_from_blob(account, key, container, args.val_dir)
 
     mlflow.start_run()
-
-    if not args.run_cloud:
-        dataset_folder = f"data/{args.dataset}"
-        my_logger.info("Local mode. dataset_folder=%s", dataset_folder)
-    else:
-        dataset_folder = args.dataset
-        load_dotenv()
-        storage_account = os.getenv("AZURE_STORAGE_ACCOUNT")
-        storage_key = os.getenv("AZURE_STORAGE_KEY")
-        container_name = os.getenv("BLOB_CONTAINER")
-        my_logger.info("Cloud mode. Downloading data from blob.")
-        download_from_blob(storage_account, storage_key, container_name, dataset_folder)
-
-    my_logger.info("Loading dataset")
-    my_dataset = Dataset2DBinary(dataset_folder, max_samples=args.max_samples)
-    my_logger.info(f"Dataset loaded with a maximum of {args.max_samples} samples")
-
-    my_logger.info("Extracting patient IDs and labels")
-    patient_ids = [sample[1] for sample in my_dataset]
-    labels = [sample[2] for sample in my_dataset]
-
-    random.seed(42)
-    combined = list(zip(patient_ids, labels))
-    random.shuffle(combined)
-    patient_ids, labels = zip(*combined)
-    patient_ids = list(patient_ids)
-    labels = list(labels)
-
-    if args.i < 0 or args.i >= args.k:
-        my_logger.error(f"Invalid fold index 'i': {args.i}. It must be between 0 and {args.k - 1}.")
-        raise ValueError(f"Fold index 'i' must be between 0 and {args.k - 1}, but got {args.i}.")
-
-    my_logger.info(f"Performing Stratified K-Fold with {args.k} splits")
-    skf = StratifiedKFold(n_splits=args.k, shuffle=True, random_state=42)
-    splits = list(skf.split(np.zeros(len(my_dataset)), labels))
-
-    train_idx, val_idx = splits[args.i]
-    my_logger.info(f"Train index: {train_idx[:10]}... ({len(train_idx)} samples)")
-    my_logger.info(f"Val index: {val_idx[:10]}... ({len(val_idx)} samples)")
-
-    my_logger.info("Creating data loaders")
-    train_dataset = Subset(my_dataset, train_idx)
-    val_dataset = Subset(my_dataset, val_idx)
+    my_logger.info("Loading datasets...")
+    train_dataset = Dataset2DBinary(args.train_dir)
+    val_seq_dataset = DatasetSequence2DBinary(dataset_folder=args.val_dir, sequence_length=args.sequence_length)
 
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False)
-    my_logger.info("Data loaders created")
+    val_seq_loader = DataLoader(val_seq_dataset, batch_size=args.batch_size, shuffle=False)
+    my_logger.info(f"Loaded {len(train_dataset)} train samples and {len(val_seq_dataset)} validation sequences.")
 
-    my_logger.info("Starting model training")
-    train_model(train_loader, val_loader, args.num_epochs, args.learning_rate)
+    train_model(
+        train_loader,
+        val_seq_loader,
+        num_epochs    = args.num_epochs,
+        learning_rate = args.learning_rate,
+        model_name    = args.model_name
+    )
+
     mlflow.end_run()
     my_logger.info("MLflow run ended")
 

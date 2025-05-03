@@ -4,7 +4,7 @@ Prepare an experiment dataset by copying selected scan folders into a new datase
 
 Usage:
     python prepare_experiment_dataset.py \
-        --list-file temp/selected-segmented.txt \
+        --list-file data/selection_logs/selected-segmented.txt \
         --dataset-name ccccii_selected \
         [--source-root data/ccccii]
 

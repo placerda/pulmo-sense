@@ -1,27 +1,38 @@
 #!/usr/bin/env python3
 """
-Detect scan folders containing multiple exams by analyzing standard deviation of pixel-intensity differences between consecutive slices,
-while also selecting valid studies (>=30 slices), listing short studies (<30 slices, with slice count), logging processing errors,
-and recording scans containing unsupported formats separately.
+This script analyzes CT scan folders to detect cases where multiple exams may be mixed within a single folder. 
+It works by computing the pixel-wise absolute differences between consecutive slices, then calculating the 
+global standard deviation of those differences. A sudden large standard deviation indicates a possible 
+boundary between different exams.
+
+Each scan is also categorized based on its number of slices: scans with at least 30 valid slices are selected 
+for further use, while those with fewer than 30 are recorded separately. The script additionally logs 
+processing errors (such as unreadable images) and unsupported file formats, and generates detailed reports 
+of slice-to-slice intensity variations.
+
+The standard deviation is computed across all pixel differences, and measures how widely pixel changes are 
+spread out relative to their mean.
 
 Usage:
-    python detect-folders-with-multiple-scans.py [root_dir] [--std-threshold STD]
+    python scan_selection.py [root_dir] [--std-threshold STD]
 
 Example:
-    python detect-folders-with-multiple-scans.py --std-threshold 50.0
-    python detect-folders-with-multiple-scans.py data/ccccii/CP/1620/4308 -s 50
+    python scan_selection.py --std-threshold 50.0
+    python scan_selection.py data/ccccii/CP/1620/4308 -s 50
 
 Defaults:
     root_dir            = data/ccccii
     std_threshold       = 50.0 gray-levels
-Outputs:
-    temp/multiple-scans.txt       (flagged scans)
-    temp/selected-studies.txt     (unflagged scans with >=30 valid slices)
-    temp/few-slices.txt           (scans with <30 valid slices, with slice count)
-    temp/each-slice.txt           (all slice comparisons)
-    temp/processing-error.txt     (processing errors)
-    temp/other-formats.txt        (scans with unsupported file formats)
+
+Outputs (saved in data/selection_logs/ folder):
+    - multiple-scans.txt      : scans flagged for possible multiple exams (large intensity jumps)
+    - selected-studies.txt    : scans with >=30 slices and no flagged jumps
+    - few-slices.txt          : scans with <30 slices (listed with slice counts)
+    - each-slice.txt          : all slice-to-slice standard deviation measurements
+    - processing-error.txt    : scans where reading an image failed
+    - other-formats.txt       : scans containing unsupported image formats
 """
+
 import os
 import argparse
 from PIL import Image
@@ -116,8 +127,8 @@ def main():
     )
     args = parser.parse_args()
 
-    # Prepare temp outputs
-    temp = 'temp'
+    # Prepare logs outputs
+    temp = 'data/selection_logs'
     os.makedirs(temp, exist_ok=True)
     paths = {
         'multiple': os.path.join(temp, 'multiple-scans.txt'),
@@ -158,7 +169,7 @@ def main():
                             m_out, sel_out, few_out, each_out, err_out, other_out
                         )
 
-    print("Done. Check temp/ for outputs.")
+    print("Done. Check data/selection_logs/ for outputs.")
 
 if __name__ == '__main__':
     main()

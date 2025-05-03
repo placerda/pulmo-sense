@@ -94,7 +94,7 @@ class MosmedSequenceDataset2DBinary(Dataset):
     Sequence dataset version for models that process sequences (e.g. LSTM-based methods).
     This groups slices by patient and forms sequences of 30 consecutive slices.
     """
-    def __init__(self, root_dir, sequence_length=30, max_samples=None):
+    def __init__(self, root_dir, sequence_length=30, max_samples=0):
         self.sequence_length = sequence_length
         self.max_samples = max_samples
         # Initialize the base dataset

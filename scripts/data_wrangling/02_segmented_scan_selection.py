@@ -1,20 +1,37 @@
 #!/usr/bin/env python3
 """
-Count CT scan studies (from selected studies) as segmented or non-segmented based on mean pixel intensity.
-Segmented studies have more black area (lower mean) than non-segmented.
+This script classifies CT scan studies as either segmented or non-segmented based on their overall mean pixel intensity.
+
+Segmented studies typically contain a larger proportion of black background (lower intensity values) due to prior 
+manual or automatic segmentation. To detect this, the script calculates the average pixel intensity across all slices 
+in a study: if the mean is below a given threshold (default = 50.0), the study is classified as segmented; otherwise, 
+it is classified as non-segmented.
+
+The script processes a list of study folders (paths) provided in a file, handles reading errors gracefully, and 
+saves the results into three output files under the `temp/` folder.
+
+Key points:
+- Pixel intensities are assumed to be in the 0–255 grayscale range.
+- Only '.png', '.jpg', and '.jpeg' files are considered valid slices.
+- Errors while loading images are logged separately without interrupting the execution.
 
 Usage:
     python count_segmented_scans.py [--selected-file PATH] [--threshold THRESH]
 
+Example:
+    python count_segmented_scans.py --threshold 50.0
+    python count_segmented_scans.py --selected-file temp/selected-studies.txt -t 45
+
 Defaults:
     selected_file = temp/selected-studies.txt
-    threshold     = 50.0
+    threshold     = 50.0 (mean pixel intensity)
 
-Outputs in temp/:
-    selected-segmented.txt       (list of segmented studies)
-    selected-nonsegmented.txt    (list of non-segmented studies)
-    segmentation-errors.txt       (errors during processing)
-"""
+Outputs (in temp/ folder):
+    - selected-segmented.txt       : paths of studies classified as segmented
+    - selected-nonsegmented.txt    : paths of studies classified as non-segmented
+    - segmentation-errors.txt      : errors encountered during processing
+"""	
+
 import os
 import argparse
 from PIL import Image

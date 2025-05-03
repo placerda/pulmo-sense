@@ -4,7 +4,7 @@ File: /datasets/dataset_statistics.py
 
 This script computes a combined patient, volume, and slice summary table for a dataset.
 It navigates through the directory structure under a specified root directory
-and processes each dataset subdirectory separately. Any subdirectory named "ignore"
+and processes each dataset subdirectory separately. Any subdirectory named "other_data" or "selection_logs"
 will be skipped.
 
 Usage:
@@ -140,7 +140,7 @@ def main():
 
     datasets = sorted([
         d for d in os.listdir(args.dataset_root)
-        if os.path.isdir(os.path.join(args.dataset_root, d)) and d.lower() != "ignore"
+        if os.path.isdir(os.path.join(args.dataset_root, d)) and d.lower() != "other_data" and d.lower() != "selection_logs"
     ])
 
     if not datasets:

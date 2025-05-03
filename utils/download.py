@@ -7,21 +7,15 @@ from collections import defaultdict
 my_logger = get_custom_logger('download')
 
 def download_blob(blob_client, download_file_path):
+    # my_logger.info(f"[download_blob] Starting downloading blobs to {download_file_path}.")  # Log the start of the download process    
     if not os.path.exists(download_file_path):
         os.makedirs(os.path.dirname(download_file_path), exist_ok=True)
-        with open(download_file_path, "wb") as download_file:
-            download_file.write(blob_client.download_blob().readall())
-
-
-def download_from_blob_with_access_key(blob_url: str, access_key: str, download_path: str):
-    from azure.storage.blob import BlobClient
-    blob_client = BlobClient.from_blob_url(blob_url=blob_url, credential=access_key)
-    with open(download_path, 'wb') as file:
-        data = blob_client.download_blob()
-        file.write(data.readall())
+    with open(download_file_path, "wb") as download_file:
+        download_file.write(blob_client.download_blob().readall())
+        my_logger.info(f"[download_blob] Downloaded {download_file_path}.") 
 
 def download_from_blob(storage_account, access_key, container_name, download_path):
-    my_logger.info(f"Starting downloading blobs to {download_path}.")  # Log the start of the download process
+    my_logger.info(f"[download_from_blob] Starting downloading blobs to {download_path}.")  # Log the start of the download process
     blob_service_client = BlobServiceClient(account_url=f"https://{storage_account}.blob.core.windows.net", credential=access_key)
     container_client = blob_service_client.get_container_client(container_name)
     blobs_list = container_client.list_blobs(name_starts_with=download_path)
@@ -35,13 +29,22 @@ def download_from_blob(storage_account, access_key, container_name, download_pat
         for blob in blobs_list:
             blob_client = container_client.get_blob_client(blob)
             download_file_path = blob.name
+            my_logger.info(f"Downloading {download_file_path}.")
             futures.append(executor.submit(download_blob, blob_client, download_file_path))
 
         for future in concurrent.futures.as_completed(futures):
             future.result()  # Wait for each download to complete, handle exceptions if necessary
         
-        my_logger.info(f"Finished downloading blobs to {download_path}.")  # Log the completion of the download process
-
+def download_from_blob_with_access_key(blob_url: str, access_key: str, download_path: str):
+    my_logger.info(f"[download_from_blob_with_access_key] Starting downloading blobs to {download_path}.")
+    from azure.storage.blob import BlobClient
+    blob_client = BlobClient.from_blob_url(blob_url=blob_url, credential=access_key)
+    if not os.path.exists(download_path):
+        os.makedirs(os.path.dirname(download_path), exist_ok=True)    
+    with open(download_path, 'wb') as file:
+        data = blob_client.download_blob()
+        file.write(data.readall())
+    my_logger.info(f"[download_blob] Downloaded {download_path}.") 
 
 def get_patient_directories(container_client, disease_path):
     """
