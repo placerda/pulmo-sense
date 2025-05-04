@@ -78,18 +78,20 @@ def train(train_loader, feat_ext, model, criterion, optimizer, device, epochs, c
 
         for imgs, labels in train_loader:
             imgs, labels = imgs.to(device), labels.to(device)
-            B, S, C, H, W = imgs.shape
+            B, S, C, H, W = imgs.size()
             flat = imgs.view(B * S, C, H, W)
 
             # chunked feature extraction
-            feats = []
+            feats_chunks = []
             with torch.no_grad():
-                for i in range(0, flat.size(0), chunk_size):
+                for start in range(0, flat.size(0), chunk_size):
+                    end = start + chunk_size
                     with autocast():
-                        feats.append(feat_ext(flat[i:i+chunk_size]))
-            feats = torch.cat(feats, dim=0).view(B, S, -1)
+                        feats_chunks.append(feat_ext(flat[start:end]))
+            # concatenate and cast back to float32
+            feats = torch.cat(feats_chunks, dim=0).view(B, S, -1).float()
 
-            logits = model(feats)
+            logits = lstm(feats)
             loss = criterion(logits, labels)
 
             optimizer.zero_grad()

@@ -122,22 +122,20 @@ def train_model(train_loader: DataLoader,
         # ----------
         # TRAINING
         # ----------
-        lstm.train()
-        total_loss = total_correct = total_samples = 0
-
         for imgs, labels in train_loader:
             imgs, labels = imgs.to(device), labels.to(device)
             B, S, C, H, W = imgs.size()
             flat = imgs.view(B * S, C, H, W)
 
-            # Chunked feature extraction with mixed precision
+            # chunked feature extraction
             feats_chunks = []
             with torch.no_grad():
                 for start in range(0, flat.size(0), chunk_size):
                     end = start + chunk_size
                     with autocast():
                         feats_chunks.append(feat_ext(flat[start:end]))
-                feats = torch.cat(feats_chunks, dim=0).view(B, S, -1)
+            # concatenate and cast back to float32
+            feats = torch.cat(feats_chunks, dim=0).view(B, S, -1).float()
 
             logits = lstm(feats)
             loss = criterion(logits, labels)
@@ -176,7 +174,7 @@ def train_model(train_loader: DataLoader,
                     end = start + chunk_size
                     with autocast():
                         feats_chunks.append(feat_ext(flat[start:end]))
-                feats = torch.cat(feats_chunks, dim=0).view(B, S, -1)
+                feats = torch.cat(feats_chunks, dim=0).view(B, S, -1).float()
 
                 logits = lstm(feats)
                 batch_loss = criterion(logits, labels)

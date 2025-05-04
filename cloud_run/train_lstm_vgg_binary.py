@@ -33,7 +33,7 @@ ml_client = MLClient(
 
 # Create or get the GPU cluster
 
-# gpu_compute_target = "gpuclustercentralindia1"
+gpu_compute_target = "gpuclustercentralindia1"
 # gpu_compute_target = "gpuclustercentralindia2"
 # gpu_compute_target = "gpuclustercentralindia3"
 # gpu_compute_target = "gpuclustercentralindia004"
@@ -50,17 +50,17 @@ dataset_name = "ccccii"
 fold = "1"
 pretrained_binary_vgg_model_uri = "https://myexperiments0584390316.blob.core.windows.net/azureml/ExperimentRun/dcid.amiable_peach_hnmjpy5cn3/outputs/vgg_1ep_0.00050lr_1.000rec.pth"
 
-fold = "2"
-pretrained_binary_vgg_model_uri = "https://myexperiments0584390316.blob.core.windows.net/azureml/ExperimentRun/dcid.boring_net_nqy44xtgvq/outputs/vgg_2ep_0.00050lr_0.996rec.pth"
+# fold = "2"
+# pretrained_binary_vgg_model_uri = "https://myexperiments0584390316.blob.core.windows.net/azureml/ExperimentRun/dcid.boring_net_nqy44xtgvq/outputs/vgg_2ep_0.00050lr_0.996rec.pth"
 
-fold = "3"
-pretrained_binary_vgg_model_uri = "https://myexperiments0584390316.blob.core.windows.net/azureml/ExperimentRun/dcid.patient_dog_60k4fzczd5/outputs/vgg_1ep_0.00050lr_1.000rec.pth"
+# fold = "3"
+# pretrained_binary_vgg_model_uri = "https://myexperiments0584390316.blob.core.windows.net/azureml/ExperimentRun/dcid.patient_dog_60k4fzczd5/outputs/vgg_1ep_0.00050lr_1.000rec.pth"
 
-fold = "4"
-pretrained_binary_vgg_model_uri = "https://myexperiments0584390316.blob.core.windows.net/azureml/ExperimentRun/dcid.kind_bulb_b5j32dbk62/outputs/vgg_1ep_0.00050lr_0.996rec.pth"
+# fold = "4"
+# pretrained_binary_vgg_model_uri = "https://myexperiments0584390316.blob.core.windows.net/azureml/ExperimentRun/dcid.kind_bulb_b5j32dbk62/outputs/vgg_1ep_0.00050lr_0.996rec.pth"
 
-fold = "5"
-pretrained_binary_vgg_model_uri = "https://myexperiments0584390316.blob.core.windows.net/azureml/ExperimentRun/dcid.silly_wall_8jzh805bhz/outputs/vgg_2ep_0.00050lr_1.000rec.pth" 
+# fold = "5"
+# pretrained_binary_vgg_model_uri = "https://myexperiments0584390316.blob.core.windows.net/azureml/ExperimentRun/dcid.silly_wall_8jzh805bhz/outputs/vgg_2ep_0.00050lr_1.000rec.pth" 
 
 
 train_dir = f"ccccii_selected_nonsegmented_fold_{fold}_train"
