@@ -32,18 +32,28 @@ ml_client = MLClient(
 # Configure run parameters
 
 # Create or get the GPU cluster
-# gpu_compute_target = "gpucluteruk"
+
+# gpu_compute_target = "gpuclustercentralindia1"
+gpu_compute_target = "gpuclustercentralindia2"
 # gpu_compute_target = "gpuclustercentralindia3"
-gpu_compute_target = "gpuclutercentralindia"
+# gpu_compute_target = "gpuclustercentralindia004"
+# gpu_compute_target = "gpuclustercentralindia5"
+
+
 experiment_name = "lstm_vgg_binary"
 dataset_name = "ccccii"
+
 # fold = "full"
 # train_dir = f"ccccii_selected_nonsegmented_train"
 # val_dir= f"ccccii_selected_nonsegmented_val"
-fold = "1"
+
+
+fold = "2"
+pretrained_binary_vgg_model_uri = "https://myexperiments0584390316.blob.core.windows.net/azureml/ExperimentRun/dcid.boring_net_nqy44xtgvq/outputs/vgg_2ep_0.00050lr_0.996rec.pth"
+
+
 train_dir = f"ccccii_selected_nonsegmented_fold_{fold}_train"
 val_dir= f"ccccii_selected_nonsegmented_fold_{fold}_val"
-pretrained_binary_vgg_model_uri = "https://myexperiments0584390316.blob.core.windows.net/azureml/ExperimentRun/dcid.silly_moon_zlqllh5djy/outputs/vgg_binary_3epoch_0.00050lr_0.967rec.pth"
 
 try:
     gpu_cluster = ml_client.compute.get(gpu_compute_target)

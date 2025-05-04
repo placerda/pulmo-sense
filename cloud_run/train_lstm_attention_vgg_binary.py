@@ -32,9 +32,13 @@ ml_client = MLClient(
 # Configure run parameters
 
 # Create or get the GPU cluster
-# gpu_compute_target = "gpucluteruk"
+
+# gpu_compute_target = "gpuclustercentralindia1"
+# gpu_compute_target = "gpuclustercentralindia2"
 # gpu_compute_target = "gpuclustercentralindia3"
-gpu_compute_target = "gpuclutercentralindia"
+# gpu_compute_target = "gpuclustercentralindia004"
+# gpu_compute_target = "gpuclustercentralindia5"
+
 experiment_name = "lstm_attention_vgg_binary"
 dataset_name = "ccccii"
 # fold = "full"

@@ -3,15 +3,16 @@
 Train LSTM-VGG binary sequence classifier
 
 This script uses a pretrained VGG16-BN (without its final classifier)
-to extract feature embeddings for each slice in a CT sequence, then trains
-an LSTM on fixed-length sequences for binary classification (NCP vs Normal).
-It downloads train/val folders from Azure Blob Storage, logs metrics to MLflow,
-and saves the best model and confusion matrix based on recall.
+ to extract feature embeddings for each slice in a CT sequence, then trains
+ an LSTM on fixed-length sequences for binary classification (NCP vs Normal).
+ It downloads train/val folders from Azure Blob Storage, logs metrics to MLflow,
+ and saves the best model and confusion matrix based on recall.
 """
 
 import argparse
 import os
 import time
+import random
 
 import mlflow
 import numpy as np
@@ -25,13 +26,25 @@ from sklearn.metrics import (
     precision_score, recall_score, f1_score,
     roc_curve, auc, confusion_matrix, ConfusionMatrixDisplay
 )
+from torch.cuda.amp import autocast
 from torch.utils.data import DataLoader
+from collections import Counter
 
 from datasets import DatasetSequence2DBinary
 from utils.download import download_from_blob
 from utils.log_config import get_custom_logger
 
 my_logger = get_custom_logger('train_lstm_vgg_binary')
+
+def set_seed(seed: int = 42):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+    # Ensure reproducibility
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 
 class VGGFeatureExtractor(nn.Module):
@@ -42,10 +55,14 @@ class VGGFeatureExtractor(nn.Module):
         embedding_dim = self.vgg.classifier[6].in_features
         self.vgg.classifier[6] = nn.Identity()
         state = torch.load(weights_path, map_location='cpu')
-        self.vgg.load_state_dict(state, strict=False)
+        missing, unexpected = self.vgg.load_state_dict(state, strict=False)
         self.embedding_dim = embedding_dim
+        my_logger.info(
+            f"Loaded VGG weights from {weights_path}. Missing keys: {missing}, Unexpected keys: {unexpected}"
+        )
 
     def forward(self, x):
+        # x: [B, 1, H, W] -> repeat to 3 channels, resize to 224x224
         x = x.repeat(1, 3, 1, 1)
         x = nn.functional.interpolate(x, size=(224, 224), mode='bilinear', align_corners=False)
         return self.vgg(x)
@@ -53,19 +70,25 @@ class VGGFeatureExtractor(nn.Module):
 
 class LSTMClassifier(nn.Module):
     """LSTM-based sequence classifier."""
-    def __init__(self, input_dim, hidden_dim=128, num_layers=1, num_classes=2, dropout=0.5):
+    def __init__(self, input_dim: int, hidden_dim: int = 128,
+                 num_layers: int = 1, num_classes: int = 2, dropout: float = 0.5):
         super().__init__()
         self.lstm = nn.LSTM(input_dim, hidden_dim, num_layers, batch_first=True)
         self.dropout = nn.Dropout(dropout)
         self.fc = nn.Linear(hidden_dim, num_classes)
 
     def forward(self, x):
-        out, _ = self.lstm(x)
-        out = self.dropout(out[:, -1])
+        out, _ = self.lstm(x)                   # [B, S, hidden_dim]
+        out = self.dropout(out[:, -1, :])       # last time step
         return self.fc(out)
 
 
-def train_model(train_loader, val_loader, num_epochs, lr, vgg_weights, seq_len):
+def train_model(train_loader: DataLoader,
+                val_loader: DataLoader,
+                num_epochs: int,
+                lr: float,
+                vgg_weights: str,
+                seq_len: int):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     my_logger.info(f"Training on {device}, seq_len={seq_len}")
 
@@ -87,17 +110,31 @@ def train_model(train_loader, val_loader, num_epochs, lr, vgg_weights, seq_len):
     no_improve = 0
     start_time = time.time()
 
+    # Chunking for feature extraction
+    chunk_size = 64
+
     for epoch in range(1, num_epochs + 1):
         my_logger.info(f"--- Epoch {epoch}/{num_epochs} ---")
-        # Training
+        # ----------
+        # TRAINING
+        # ----------
         lstm.train()
         total_loss = total_correct = total_samples = 0
+
         for imgs, labels in train_loader:
             imgs, labels = imgs.to(device), labels.to(device)
-            B, S, C, H, W = imgs.shape
+            B, S, C, H, W = imgs.size()
             flat = imgs.view(B * S, C, H, W)
+
+            # Chunked feature extraction with mixed precision
+            feats_chunks = []
             with torch.no_grad():
-                feats = feat_ext(flat).view(B, S, -1)
+                for start in range(0, flat.size(0), chunk_size):
+                    end = start + chunk_size
+                    with autocast():
+                        feats_chunks.append(feat_ext(flat[start:end]))
+                feats = torch.cat(feats_chunks, dim=0).view(B, S, -1)
+
             logits = lstm(feats)
             loss = criterion(logits, labels)
 
@@ -106,61 +143,80 @@ def train_model(train_loader, val_loader, num_epochs, lr, vgg_weights, seq_len):
             optimizer.step()
 
             total_loss += loss.item() * B
-            preds = logits.argmax(1)
+            preds = logits.argmax(dim=1)
             total_correct += preds.eq(labels).sum().item()
             total_samples += B
 
         train_loss = total_loss / total_samples
-        train_acc = total_correct / total_samples
+        train_acc = 100.0 * total_correct / total_samples
         mlflow.log_metric('train_loss', train_loss, step=epoch)
         mlflow.log_metric('train_accuracy', train_acc, step=epoch)
-        my_logger.info(f"Train loss={train_loss:.4f}, acc={train_acc:.4f}")
+        my_logger.info(f"Train loss={train_loss:.4f}, acc={train_acc:.2f}%")
 
-        # Validation
+        # ------------
+        # VALIDATION
+        # ------------
         lstm.eval()
         val_loss = val_correct = val_count = 0
-        all_labels, all_probs = [], []
+        all_labels = []
+        all_probs = []
+
         with torch.no_grad():
             for imgs, labels in val_loader:
                 imgs, labels = imgs.to(device), labels.to(device)
-                B, S, C, H, W = imgs.shape
+                B, S, C, H, W = imgs.size()
                 flat = imgs.view(B * S, C, H, W)
-                feats = feat_ext(flat).view(B, S, -1)
-                logits = lstm(feats)
 
-                val_loss += criterion(logits, labels).item() * B
+                feats_chunks = []
+                for start in range(0, flat.size(0), chunk_size):
+                    end = start + chunk_size
+                    with autocast():
+                        feats_chunks.append(feat_ext(flat[start:end]))
+                feats = torch.cat(feats_chunks, dim=0).view(B, S, -1)
+
+                logits = lstm(feats)
+                batch_loss = criterion(logits, labels)
+                val_loss += batch_loss.item() * B
+
                 probs = torch.softmax(logits, dim=1)
-                preds = probs.argmax(1)
+                preds = probs.argmax(dim=1)
                 val_correct += preds.eq(labels).sum().item()
                 val_count += B
 
-                all_labels.extend(labels.cpu().numpy())
-                all_probs.extend(probs.cpu().numpy())
+                all_labels.extend(labels.cpu().tolist())
+                all_probs.extend(probs.cpu().tolist())
 
         val_loss /= val_count
-        val_acc = val_correct / val_count
+        val_acc = 100.0 * val_correct / val_count
         all_labels = np.array(all_labels)
-        all_probs = np.vstack(all_probs)
+        all_probs = np.array(all_probs)
         val_preds = all_probs.argmax(axis=1)
 
         val_recall = recall_score(all_labels, val_preds, average='binary', pos_label=1, zero_division=0)
         val_precision = precision_score(all_labels, val_preds, average='binary', pos_label=1, zero_division=0)
         val_f1 = f1_score(all_labels, val_preds, average='binary', pos_label=1, zero_division=0)
         try:
-            fpr, tpr, _ = roc_curve(all_labels, all_probs[:,1], pos_label=1)
+            fpr, tpr, _ = roc_curve(all_labels, all_probs[:, 1], pos_label=1)
             val_auc = auc(fpr, tpr)
-        except Exception:
+        except Exception as e:
+            my_logger.error("Error computing AUC: %s", e)
             val_auc = 0.0
 
-        for name, val in [('val_loss', val_loss), ('val_accuracy', val_acc),
-                          ('val_recall', val_recall), ('val_precision', val_precision),
-                          ('val_f1', val_f1), ('val_auc', val_auc)]:
-            mlflow.log_metric(name, val, step=epoch)
+        # Log metrics
+        mlflow.log_metric('val_loss', val_loss, step=epoch)
+        mlflow.log_metric('val_accuracy', val_acc, step=epoch)
+        mlflow.log_metric('val_recall', val_recall, step=epoch)
+        mlflow.log_metric('val_precision', val_precision, step=epoch)
+        mlflow.log_metric('val_f1', val_f1, step=epoch)
+        mlflow.log_metric('val_auc', val_auc, step=epoch)
+
         my_logger.info(
-            f"Val loss={val_loss:.4f}, acc={val_acc:.4f}, recall={val_recall:.2f}, "
+            f"Val loss={val_loss:.4f}, acc={val_acc:.2f}%, recall={val_recall:.2f}, "
             f"precision={val_precision:.2f}, f1={val_f1:.2f}, auc={val_auc:.2f}"
         )
+        my_logger.info(f"Val label distribution: {Counter(all_labels.tolist())}")
 
+        # Save best by recall
         prefix = f"lstm_vgg_seq{seq_len}_{epoch}ep_{lr:.5f}lr_{val_recall:.3f}rec"
         os.makedirs('outputs', exist_ok=True)
         model_path = f"outputs/{prefix}.pth"
@@ -175,10 +231,9 @@ def train_model(train_loader, val_loader, num_epochs, lr, vgg_weights, seq_len):
 
             cm = confusion_matrix(all_labels, val_preds)
             disp = ConfusionMatrixDisplay(cm)
-            disp.plot(cmap=plt.cm.Blues)
+            disp.plot()
             cm_path = f"outputs/{prefix}_confmat.png"
-            plt.savefig(cm_path)
-            plt.close()
+            plt.savefig(cm_path); plt.close()
             best_cm_path = cm_path
             my_logger.info(f"Saved confusion matrix: {cm_path}")
 
@@ -191,7 +246,6 @@ def train_model(train_loader, val_loader, num_epochs, lr, vgg_weights, seq_len):
 
     elapsed = time.time() - start_time
     my_logger.info(f"Training complete in {elapsed:.2f}s")
-
     mlflow.log_metric('best_recall', best_recall)
     mlflow.log_metrics({f"best_{k}": v for k, v in best_metrics.items()})
     my_logger.info(f"Best metrics: {best_metrics}")
@@ -200,16 +254,17 @@ def train_model(train_loader, val_loader, num_epochs, lr, vgg_weights, seq_len):
 
 def main():
     parser = argparse.ArgumentParser(description="Train LSTM-VGG sequence model")
-    parser.add_argument("--train_dir", type=str, required=True, help="Training folder")
-    parser.add_argument("--val_dir", type=str, required=True, help="Validation folder")
-    parser.add_argument("--vgg_model_path", type=str, required=True, help="VGG weights .pth path")
-    parser.add_argument("--sequence_length", type=int, required=True, help="Frames per sequence")
-    parser.add_argument("--num_epochs", type=int, default=20, help="Training epochs")
-    parser.add_argument("--batch_size", type=int, default=16, help="Batch size")
-    parser.add_argument("--learning_rate", type=float, default=0.0005, help="Learning rate")
+    parser.add_argument("--train_dir", type=str, required=True)
+    parser.add_argument("--val_dir", type=str, required=True)
+    parser.add_argument("--vgg_model_path", type=str, required=True)
+    parser.add_argument("--sequence_length", type=int, required=True)
+    parser.add_argument("--num_epochs", type=int, default=20)
+    parser.add_argument("--batch_size", type=int, default=16)
+    parser.add_argument("--learning_rate", type=float, default=0.0005)
     args = parser.parse_args()
     my_logger.info(f"Args: {args}")
 
+    set_seed(42)
     load_dotenv()
     account = os.getenv("AZURE_STORAGE_ACCOUNT")
     key = os.getenv("AZURE_STORAGE_KEY")
@@ -221,17 +276,33 @@ def main():
     mlflow.start_run()
     train_ds = DatasetSequence2DBinary(args.train_dir, args.sequence_length)
     val_ds = DatasetSequence2DBinary(args.val_dir, args.sequence_length)
-    train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True)
-    val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False)
+    train_loader = DataLoader(
+        train_ds,
+        batch_size=args.batch_size,
+        shuffle=True,
+        num_workers=4,
+        pin_memory=True
+    )
+    val_loader = DataLoader(
+        val_ds,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=4,
+        pin_memory=True
+    )
     my_logger.info(f"Loaded train seqs={len(train_ds)}, val seqs={len(val_ds)}")
 
-    train_model(train_loader, val_loader,
-                num_epochs=args.num_epochs,
-                lr=args.learning_rate,
-                vgg_weights=args.vgg_model_path,
-                seq_len=args.sequence_length)
+    train_model(
+        train_loader,
+        val_loader,
+        num_epochs=args.num_epochs,
+        lr=args.learning_rate,
+        vgg_weights=args.vgg_model_path,
+        seq_len=args.sequence_length
+    )
     mlflow.end_run()
     my_logger.info("MLflow run ended")
+
 
 if __name__ == '__main__':
     main()

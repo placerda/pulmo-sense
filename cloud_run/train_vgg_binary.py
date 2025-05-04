@@ -29,13 +29,13 @@ ml_client = MLClient(
 # Configure run parameters
 
 # Create or get the GPU cluster
-# gpu_compute_target = "gpuclustercentralindia"
-gpu_compute_target = "gpuclusterwesteurope1"
-# gpu_compute_target = "2"
+# gpu_compute_target = "gpuclusterwesteurope1"
+# gpu_compute_target = "gpuclusterswedencentral2"
 # gpu_compute_target = "gpuclustercentralindia3"
-# gpu_compute_target = "gpuclusterukwest4"
+# gpu_compute_target = "gpuclustercentralindia004"
 # gpu_compute_target = "gpuclusterswedencentral5"
-fold = "1"
+gpu_compute_target = "gpuclustercentralindia5"
+fold = "5"
 
 
 experiment_name = "vgg_binary"
