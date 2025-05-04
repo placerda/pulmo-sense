@@ -99,7 +99,7 @@ def get_display_name(base_name):
 inputs = {
     "train_dir": train_dir,
     "val_dir": val_dir,
-    "epochs": 20,
+    "num_epochs": 20,
     "batch_size": 16,
     "lr": 0.0005,
     "sequence_length": 30,
@@ -114,7 +114,7 @@ job = command(
     command=(
         "python -m scripts.train.train_lstm_vgg_binary "
         "--sequence_length ${{inputs.sequence_length}} "
-        "--epochs ${{inputs.epochs}} "
+        "--num_epochs ${{inputs.num_epochs}} "
         "--batch_size ${{inputs.batch_size}} "
         "--lr ${{inputs.lr}} "
         "--train_dir ${{inputs.train_dir}} "
