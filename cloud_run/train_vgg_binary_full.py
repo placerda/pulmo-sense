@@ -29,22 +29,12 @@ ml_client = MLClient(
 # Configure run parameters
 
 # Create or get the GPU cluster
-# gpu_compute_target = "gpuclustercentralindia1"
-# gpu_compute_target = "gpuclustercentralindia2"
-# gpu_compute_target = "gpuclustercentralindia3"
-# gpu_compute_target = "gpuclustercentralindia004"
-gpu_compute_target = "gpuclustercentralindia5"
-fold = "5"
-
+gpu_compute_target = "gpuclusterinferenceindia"
+fold = "full"
 
 experiment_name = "vgg_binary"
 dataset_name = "ccccii"
-# fold = "full"
-# train_dir = f"ccccii_selected_nonsegmented_train"
-# val_dir= f"ccccii_selected_nonsegmented_val"
-train_dir = f"ccccii_selected_nonsegmented_fold_{fold}_train"
-val_dir= f"ccccii_selected_nonsegmented_fold_{fold}_val"
-
+train_dir = f"ccccii_selected_nonsegmented_train"
 
 try:
     gpu_cluster = ml_client.compute.get(gpu_compute_target)
@@ -80,7 +70,6 @@ def get_display_name(base_name):
 # Parameters
 inputs = {
     "train_dir": train_dir,
-    "val_dir": val_dir,
     "num_epochs": 20,
     "batch_size": 16,
     "learning_rate": 0.0005
@@ -94,9 +83,8 @@ job = command(
     environment=custom_env_name,
     code="../",  # location of source code
     command=(
-        "python -m scripts.train.train_vgg_binary "
+        "python -m scripts.train.train_vgg_binary_full "
         "--train_dir ${{inputs.train_dir}} "
-        "--val_dir ${{inputs.val_dir}} "
         "--num_epochs ${{inputs.num_epochs}} "
         "--batch_size ${{inputs.batch_size}} "
         "--learning_rate ${{inputs.learning_rate}} "
@@ -113,5 +101,3 @@ submitted_job = ml_client.jobs.create_or_update(job)
 
 job_name = submitted_job.id.split("/")[-1]
 print(f"Submitted job {display_name} ({job_name}) to Azure ML")
-
-# %%
