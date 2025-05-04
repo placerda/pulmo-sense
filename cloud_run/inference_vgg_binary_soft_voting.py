@@ -31,13 +31,13 @@ ml_client = MLClient(
 # Create or get the GPU cluster
 # gpu_compute_target = "gpuclustercentralindia1"
 # gpu_compute_target = "gpuclustercentralindia2"
-gpu_compute_target = "gpuclustercentralindia003"
+# gpu_compute_target = "gpuclustercentralindia003"
 # gpu_compute_target = "gpuclustercentralindia004"
-# gpu_compute_target = "gpuclustercentralindia5"
+gpu_compute_target = "gpuclustercentralindia5"
 
-experiment_name = "vgg_binary"
+experiment_name = "vgg_binary_inference"
 dataset_name = "ccccii"
-test_dir = f"ccccii_selected_nonsegmented_test"
+dataset_dir = f"ccccii_selected_nonsegmented_test"
 model_uri = "https://myexperiments0584390316.blob.core.windows.net/azureml/ExperimentRun/dcid.sincere_heart_gzhryfgr86/outputs/vgg_full_1epochs.pth"
 
 try:
@@ -74,8 +74,7 @@ def get_display_name(base_name):
 # Parameters
 inputs = {
     "model_uri": model_uri,
-    "test_dir": test_dir,
-    "batch_size": 16
+    "dataset_dir": dataset_dir
 }
 
 display_name=get_display_name(experiment_name)
@@ -86,15 +85,15 @@ job = command(
     environment=custom_env_name,
     code="../",  # location of source code
     command=(
-        "python -m scripts.test.test_vgg_binary "
-        "--test_dir ${{inputs.test_dir}} "
+        "python -m scripts.inference.vgg_binary_soft_voting "
+        "--dataset_dir ${{inputs.dataset_dir}} "
         "--model_uri ${{inputs.model_uri}} "
-        "--batch_size ${{inputs.batch_size}} "
     ),
     environment_variables=env_vars,
     experiment_name=experiment_name,
     display_name=display_name,
-    tags= { 'dataset': dataset_name} 
+    tags= { 'voting': 'soft_voting',} 
+        | { 'dataset': dataset_name} 
         | {key: str(value) for key, value in inputs.items()}
 )
 
