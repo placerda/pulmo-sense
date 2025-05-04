@@ -114,7 +114,7 @@ job = command(
     command=(
         "python -m scripts.train.train_lstm_vgg_binary "
         "--sequence_length ${{inputs.sequence_length}} "
-        "--epochs ${{inputs.num_epochs}} "
+        "--epochs ${{inputs.epochs}} "
         "--batch_size ${{inputs.batch_size}} "
         "--learning_rate ${{inputs.learning_rate}} "
         "--train_dir ${{inputs.train_dir}} "
