@@ -31,7 +31,7 @@ from torch.utils.data import DataLoader
 from collections import Counter
 
 from datasets import DatasetSequence2DBinary
-from utils.download import download_from_blob
+from utils.download import download_from_blob, download_from_blob_with_access_key
 from utils.log_config import get_custom_logger
 
 my_logger = get_custom_logger('train_lstm_vgg_binary')
@@ -256,7 +256,7 @@ def main():
     parser = argparse.ArgumentParser(description="Train LSTM-VGG sequence model")
     parser.add_argument("--train_dir", type=str, required=True)
     parser.add_argument("--val_dir", type=str, required=True)
-    parser.add_argument("--vgg_model_path", type=str, required=True)
+    parser.add_argument("--vgg_model_uri", type=str, required=True)
     parser.add_argument("--sequence_length", type=int, required=True)
     parser.add_argument("--num_epochs", type=int, default=20)
     parser.add_argument("--batch_size", type=int, default=16)
@@ -272,6 +272,9 @@ def main():
     my_logger.info("Downloading data from blob storage")
     download_from_blob(account, key, container, args.train_dir)
     download_from_blob(account, key, container, args.val_dir)
+
+    vgg_model_path = "models/vgg_binary_best.pth"
+    download_from_blob_with_access_key(args.vgg_model_uri, key, vgg_model_path)   
 
     mlflow.start_run()
     train_ds = DatasetSequence2DBinary(args.train_dir, args.sequence_length)
@@ -297,7 +300,7 @@ def main():
         val_loader,
         num_epochs=args.num_epochs,
         lr=args.learning_rate,
-        vgg_weights=args.vgg_model_path,
+        vgg_weights=vgg_model_path,
         seq_len=args.sequence_length
     )
     mlflow.end_run()
