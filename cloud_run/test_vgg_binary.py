@@ -86,7 +86,7 @@ job = command(
     environment=custom_env_name,
     code="../",  # location of source code
     command=(
-        "python -m scripts.train.test_vgg_binary "
+        "python -m scripts.test.test_vgg_binary "
         "--test_dir ${{inputs.test_dir}} "
         "--model_uri ${{inputs.model_uri}} "
         "--batch_size ${{inputs.batch_size}} "
