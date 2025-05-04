@@ -101,7 +101,7 @@ inputs = {
     "val_dir": val_dir,
     "epochs": 20,
     "batch_size": 16,
-    "learning_rate": 0.0005,
+    "lr": 0.0005,
     "sequence_length": 30,
     "vgg_model_uri": pretrained_binary_vgg_model_uri
 }
@@ -116,7 +116,7 @@ job = command(
         "--sequence_length ${{inputs.sequence_length}} "
         "--epochs ${{inputs.epochs}} "
         "--batch_size ${{inputs.batch_size}} "
-        "--learning_rate ${{inputs.learning_rate}} "
+        "--lr ${{inputs.lr}} "
         "--train_dir ${{inputs.train_dir}} "
         "--val_dir ${{inputs.val_dir}} "
         "--vgg_model_uri ${{inputs.vgg_model_uri}} "
