@@ -21,7 +21,7 @@ from torch.cuda.amp import autocast
 from collections import Counter
 
 from datasets import DatasetSequence2DBinary
-from utils.download import download_from_blob
+from utils.download import download_from_blob, download_from_blob_with_access_key
 from utils.log_config import get_custom_logger
 
 logger = get_custom_logger('train_lstm_attention_vgg_no_val')
@@ -131,7 +131,7 @@ def train(train_loader, feat_ext, clf, criterion, optimizer, device, epochs, chu
 def main():
     parser = argparse.ArgumentParser("Train LSTM+Attention VGG binary (no val)")
     parser.add_argument('--train_dir', type=str, required=True)
-    parser.add_argument('--vgg_weights', type=str, required=True)
+    parser.add_argument('--vgg_model_uri', type=str, required=True)
     parser.add_argument('--sequence_length', type=int, required=True)
     parser.add_argument('--epochs', type=int, default=20)
     parser.add_argument('--batch_size', type=int, default=16)
@@ -151,6 +151,10 @@ def main():
     logger.info("Downloading training dataset from blob...")
     download_from_blob(acct, key, cont, args.train_dir)
 
+    vgg_path = 'models/vgg_binary.pth'
+    download_from_blob_with_access_key(args.vgg_model_uri, key, vgg_path)
+
+
     # Data
     train_ds = DatasetSequence2DBinary(args.train_dir, args.sequence_length)
     train_labels = train_ds.labels
@@ -163,7 +167,7 @@ def main():
     )
 
     # Models
-    feat_ext = VGGFeatureExtractor(args.vgg_weights).to(device)
+    feat_ext = VGGFeatureExtractor(vgg_path).to(device)
     feat_ext.eval()
     for p in feat_ext.parameters(): p.requires_grad = False
 
