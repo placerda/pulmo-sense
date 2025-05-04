@@ -31,9 +31,9 @@ ml_client = MLClient(
 # Create or get the GPU cluster
 # gpu_compute_target = "gpuclustercentralindia1"
 # gpu_compute_target = "gpuclustercentralindia2"
-# gpu_compute_target = "gpuclustercentralindia3"
+gpu_compute_target = "gpuclustercentralindia003"
 # gpu_compute_target = "gpuclustercentralindia004"
-gpu_compute_target = "gpuclustercentralindia5"
+# gpu_compute_target = "gpuclustercentralindia5"
 
 experiment_name = "vgg_binary"
 dataset_name = "ccccii"
@@ -66,6 +66,10 @@ env_vars = {
     'AZURE_STORAGE_KEY': os.getenv("AZURE_STORAGE_KEY"),
     'BLOB_CONTAINER': os.getenv("BLOB_CONTAINER")
 }
+
+def get_display_name(base_name):
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return f"{base_name} {current_time}"
 
 # Parameters
 inputs = {
