@@ -83,11 +83,11 @@ def get_display_name(base_name):
 inputs = {
     "train_dir": train_dir,
     "val_dir": val_dir,
-    "num_epochs": 20,
+    "epochs": 20,
     "batch_size": 16,
     "learning_rate": 0.0005,
     "sequence_length": 30,
-    "vgg_model_path": pretrained_binary_vgg_model_uri
+    "vgg_model_uri": pretrained_binary_vgg_model_uri
 }
 
 job = command(
@@ -98,12 +98,12 @@ job = command(
     command=(
         "python -m scripts.train.train_lstm_attention_vgg_binary "
         "--sequence_length ${{inputs.sequence_length}} "
-        "--num_epochs ${{inputs.num_epochs}} "
+        "--epochs ${{inputs.epochs}} "
         "--batch_size ${{inputs.batch_size}} "
         "--learning_rate ${{inputs.learning_rate}} "
         "--train_dir ${{inputs.train_dir}} "
         "--val_dir ${{inputs.val_dir}} "
-        "--vgg_model_path ${{inputs.vgg_model_path}} "
+        "--vgg_model_uri ${{inputs.vgg_model_uri}} "
     ),      
     environment_variables=env_vars,
     experiment_name=experiment_name,
