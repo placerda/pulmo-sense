@@ -1,7 +1,7 @@
 # %% [markdown]
-# ### Train LSTM VGG Binary Model
-# This notebook submits an Azure ML job to train the LSTM with VGG features model for binary classification.
-# The pretrained VGG weights are passed via the --vgg_model_path argument.
+# ### Train LSTM Attention VGG Binary Model
+# This notebook submits an Azure ML job to train the Attention-based LSTM with VGG features model for binary classification.
+# The pretrained VGG weights path is passed via the --cnn_model_path argument.
 # %% 
 from dotenv import load_dotenv
 from datetime import datetime
@@ -16,7 +16,7 @@ from azure.identity import DefaultAzureCredential
 from azure.ai.ml.entities import AmlCompute
 from azure.ai.ml import command
 
-# Configure the Azure workspace and authentication
+# Configure workspace credentials
 subscription_id = os.getenv("AZURE_SUBSCRIPTION_ID")
 resource_group_name = os.getenv("AZURE_RESOURCE_GROUP")
 workspace_name = os.getenv("AZURE_WORKSPACE_NAME")
@@ -34,37 +34,23 @@ ml_client = MLClient(
 # Create or get the GPU cluster
 
 # gpu_compute_target = "gpuclustercentralindia1"
-gpu_compute_target = "gpuclustercentralindia2"
-# gpu_compute_target = "gpuclustercentralindia3"
+# gpu_compute_target = "gpuclustercentralindia2"
+# gpu_compute_target = "gpuclustercentralindia003"
 # gpu_compute_target = "gpuclustercentralindia004"
-# gpu_compute_target = "gpuclustercentralindia5"
+gpu_compute_target = "gpuclustercentralindia5"
 
-
-experiment_name = "lstm_vgg_binary"
+experiment_name = "lstm_attention_vgg_binary"
 dataset_name = "ccccii"
+
 
 # fold = "full"
 # train_dir = f"ccccii_selected_nonsegmented_train"
 # val_dir= f"ccccii_selected_nonsegmented_val"
 
-# fold = "1"
-# pretrained_binary_vgg_model_uri = "https://myexperiments0584390316.blob.core.windows.net/azureml/ExperimentRun/dcid.amiable_peach_hnmjpy5cn3/outputs/vgg_1ep_0.00050lr_1.000rec.pth"
 
-fold = "2"
-pretrained_binary_vgg_model_uri = "https://myexperiments0584390316.blob.core.windows.net/azureml/ExperimentRun/dcid.boring_net_nqy44xtgvq/outputs/vgg_2ep_0.00050lr_0.996rec.pth"
-
-# fold = "3"
-# pretrained_binary_vgg_model_uri = "https://myexperiments0584390316.blob.core.windows.net/azureml/ExperimentRun/dcid.patient_dog_60k4fzczd5/outputs/vgg_1ep_0.00050lr_1.000rec.pth"
-
-# fold = "4"
-# pretrained_binary_vgg_model_uri = "https://myexperiments0584390316.blob.core.windows.net/azureml/ExperimentRun/dcid.kind_bulb_b5j32dbk62/outputs/vgg_1ep_0.00050lr_0.996rec.pth"
-
-# fold = "5"
-# pretrained_binary_vgg_model_uri = "https://myexperiments0584390316.blob.core.windows.net/azureml/ExperimentRun/dcid.silly_wall_8jzh805bhz/outputs/vgg_2ep_0.00050lr_1.000rec.pth" 
-
-
-train_dir = f"ccccii_selected_nonsegmented_fold_{fold}_train"
-val_dir= f"ccccii_selected_nonsegmented_fold_{fold}_val"
+fold = "full"
+pretrained_binary_vgg_model_uri = "https://myexperiments0584390316.blob.core.windows.net/azureml/ExperimentRun/dcid.sincere_heart_gzhryfgr86/outputs/vgg_full_1epochs.pth"
+train_dir = f"ccccii_selected_nonsegmented_train"
 
 try:
     gpu_cluster = ml_client.compute.get(gpu_compute_target)
@@ -84,7 +70,7 @@ except Exception:
     gpu_cluster = ml_client.begin_create_or_update(gpu_cluster).result()
 print(f"AMLCompute with name {gpu_cluster.name} is created, compute size is {gpu_cluster.size}")
 
-# Azure ML environment and job setup
+# Set Azure ML environment and job configuration
 custom_env_name = "custom-acpt-pytorch-113-cuda117:12"
 env_vars = {
     'AZURE_STORAGE_ACCOUNT': os.getenv("AZURE_STORAGE_ACCOUNT"),
@@ -98,8 +84,7 @@ def get_display_name(base_name):
 
 inputs = {
     "train_dir": train_dir,
-    "val_dir": val_dir,
-    "num_epochs": 20,
+    "epochs": 20,
     "batch_size": 16,
     "learning_rate": 0.0005,
     "sequence_length": 30,
@@ -110,17 +95,16 @@ job = command(
     inputs=inputs,
     compute=gpu_compute_target,
     environment=custom_env_name,
-    code="../",  # location of your source code
+    code="../",  # Location of your source code
     command=(
-        "python -m scripts.train.train_lstm_vgg_binary "
+        "python -m scripts.train.train_lstm_attention_vgg_binary "
         "--sequence_length ${{inputs.sequence_length}} "
-        "--num_epochs ${{inputs.num_epochs}} "
+        "--epochs ${{inputs.epochs}} "
         "--batch_size ${{inputs.batch_size}} "
         "--learning_rate ${{inputs.learning_rate}} "
         "--train_dir ${{inputs.train_dir}} "
-        "--val_dir ${{inputs.val_dir}} "
         "--vgg_model_uri ${{inputs.vgg_model_uri}} "
-    ),    
+    ),      
     environment_variables=env_vars,
     experiment_name=experiment_name,
     display_name=get_display_name(experiment_name),
