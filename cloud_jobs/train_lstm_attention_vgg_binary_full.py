@@ -42,11 +42,9 @@ gpu_compute_target = "gpuclustercentralindia5"
 experiment_name = "lstm_attention_vgg_binary"
 dataset_name = "ccccii"
 
-
 # fold = "full"
 # train_dir = f"ccccii_selected_nonsegmented_train"
 # val_dir= f"ccccii_selected_nonsegmented_val"
-
 
 fold = "full"
 pretrained_binary_vgg_model_uri = "https://myexperiments0584390316.blob.core.windows.net/azureml/ExperimentRun/dcid.sincere_heart_gzhryfgr86/outputs/vgg_full_1epochs.pth"
@@ -84,7 +82,7 @@ def get_display_name(base_name):
 
 inputs = {
     "train_dir": train_dir,
-    "epochs": 20,
+    "num_epochs": 2,
     "batch_size": 16,
     "learning_rate": 0.0005,
     "sequence_length": 30,
@@ -97,9 +95,9 @@ job = command(
     environment=custom_env_name,
     code="../",  # Location of your source code
     command=(
-        "python -m scripts.train.train_lstm_attention_vgg_binary "
+        "python -m scripts.train.train_lstm_attention_vgg_binary_full "
         "--sequence_length ${{inputs.sequence_length}} "
-        "--epochs ${{inputs.epochs}} "
+        "--num_epochs ${{inputs.num_epochs}} "
         "--batch_size ${{inputs.batch_size}} "
         "--learning_rate ${{inputs.learning_rate}} "
         "--train_dir ${{inputs.train_dir}} "

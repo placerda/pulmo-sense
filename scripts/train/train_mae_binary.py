@@ -6,6 +6,11 @@ This script trains a binary classifier using a pretrained Masked Autoencoder (MA
 from timm. It handles single-channel input by replicating to 3 channels,
 resizes to 224×224, downloads separate training and validation directories,
 and evaluates on sequences of slices.
+
+The training and validation loops log metrics to MLflow at each epoch. The best model
+(by validation recall) is saved, along with its confusion matrix. After training,
+we log the best-model metrics, including the epoch, loss, accuracy, recall, precision,
+F1, and AUC, to MLflow and print their values and file locations.
 """
 
 import argparse
@@ -34,17 +39,16 @@ from utils.log_config import get_custom_logger
 
 my_logger = get_custom_logger('train_mae_binary')
 
+
 class MAEModel(nn.Module):
     """
     MAE wrapper for binary classification.
     """
     def __init__(self, model_name: str, num_classes: int = 2):
         super().__init__()
-        # Use MAE variant from timm
         self.model = timm.create_model(model_name, pretrained=True, num_classes=num_classes)
 
     def forward(self, x):
-        # replicate single channel to 3 channels and resize
         x = x.repeat(1, 3, 1, 1)
         x = nn.functional.interpolate(x, size=(224, 224), mode='bilinear', align_corners=False)
         return self.model(x)
@@ -59,7 +63,6 @@ def train_model(train_loader, val_seq_loader, num_epochs, learning_rate, model_n
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-5)
 
-    # early stopping
     patience = 3
     no_improve = 0
     best_recall = 0.0
@@ -70,11 +73,10 @@ def train_model(train_loader, val_seq_loader, num_epochs, learning_rate, model_n
 
     for epoch in range(1, num_epochs + 1):
         my_logger.info(f"=== Epoch {epoch}/{num_epochs} ===")
+
         # — Training —
         model.train()
-        total_loss = 0.0
-        total_correct = 0
-        total_samples = 0
+        total_loss = total_correct = total_samples = 0
         for i, (inputs, _, labels) in enumerate(train_loader):
             inputs, labels = inputs.to(device), labels.to(device)
             outputs = model(inputs)
@@ -90,7 +92,10 @@ def train_model(train_loader, val_seq_loader, num_epochs, learning_rate, model_n
 
             if i % 50 == 0:
                 batch_acc = preds.eq(labels).float().mean().item()
-                my_logger.info(f"[Train] Batch {i}/{len(train_loader)} — Loss={loss.item():.4f}, Acc={batch_acc:.4f}")
+                my_logger.info(
+                    f"[Train] Batch {i}/{len(train_loader)} — "
+                    f"Loss={loss.item():.4f}, Acc={batch_acc:.4f}"
+                )
 
         train_loss = total_loss / total_samples
         train_acc = 100.0 * total_correct / total_samples
@@ -100,12 +105,11 @@ def train_model(train_loader, val_seq_loader, num_epochs, learning_rate, model_n
 
         # — Validation (sequence-level) —
         model.eval()
-        val_loss = 0.0
-        val_correct = 0
-        val_count = 0
+        val_loss = val_correct = val_total = 0
         all_labels = []
         all_preds = []
         all_probs = []
+
         with torch.no_grad():
             for seq_slices, seq_labels in val_seq_loader:
                 B, L, C, H, W = seq_slices.shape
@@ -122,14 +126,14 @@ def train_model(train_loader, val_seq_loader, num_epochs, learning_rate, model_n
                 probs = torch.softmax(seq_logits, dim=1)
                 preds = probs.argmax(dim=1)
                 val_correct += preds.eq(labels).sum().item()
-                val_count += B
+                val_total += B
 
                 all_labels.extend(labels.cpu().numpy())
                 all_preds.extend(preds.cpu().numpy())
                 all_probs.extend(probs.cpu().numpy())
 
-        val_loss /= val_count
-        val_acc = 100.0 * val_correct / val_count
+        val_loss = val_loss / val_total
+        val_acc = 100.0 * val_correct / val_total
         all_labels = np.array(all_labels)
         all_preds = np.array(all_preds)
         all_probs = np.array(all_probs)
@@ -145,7 +149,8 @@ def train_model(train_loader, val_seq_loader, num_epochs, learning_rate, model_n
             val_auc = 0.0
 
         my_logger.info(
-            f"Epoch {epoch} Validation — Loss={val_loss:.4f}, Acc={val_acc:.2f}%, "
+            f"Epoch {epoch} Validation — "
+            f"Loss={val_loss:.4f}, Acc={val_acc:.2f}%, "
             f"Recall={val_recall:.2f}, Precision={val_precision:.2f}, "
             f"F1={val_f1:.2f}, AUC={val_auc:.2f}"
         )
@@ -160,7 +165,13 @@ def train_model(train_loader, val_seq_loader, num_epochs, learning_rate, model_n
         if val_recall > best_recall:
             best_recall = val_recall
             best_epoch = epoch
-            best_metrics = {'loss': val_loss, 'acc': val_acc, 'precision': val_precision, 'f1': val_f1, 'auc': val_auc}
+            best_metrics = {
+                'loss': val_loss,
+                'acc': val_acc,
+                'precision': val_precision,
+                'f1': val_f1,
+                'auc': val_auc
+            }
             prefix = f"mae_{model_name}_{epoch}epoch_{learning_rate:.5f}lr_{val_recall:.3f}rec"
             os.makedirs("outputs", exist_ok=True)
             best_model_path = f"outputs/{prefix}.pth"
@@ -183,20 +194,34 @@ def train_model(train_loader, val_seq_loader, num_epochs, learning_rate, model_n
             break
 
     total_time = time.time() - start_time
-    my_logger.info(f"Training completed in {total_time:.2f}s")
+    my_logger.info(f"Training completed in {total_time:.2f}s; "
+                   f"best recall={best_recall:.3f} at epoch {best_epoch}")
 
-    # — Log best-model metrics —
-    mlflow.log_metrics({
-        "best_epoch": best_epoch,
-        **{f"best_{k}": v for k, v in best_metrics.items()}
-    }, step=best_epoch)
-    my_logger.info(f"Best model metrics: epoch {best_epoch}, {best_metrics}")
+    # — Log best-model metrics to MLflow —
+    final_metrics = {
+        "best_model_epoch":    best_epoch,
+        "best_model_loss":     best_metrics['loss'],
+        "best_model_acc":      best_metrics['acc'],
+        "best_model_recall":   best_recall,
+        "best_model_precision":best_metrics['precision'],
+        "best_model_f1":       best_metrics['f1'],
+        "best_model_auc":      best_metrics['auc']
+    }
+    mlflow.log_metrics(final_metrics, step=best_epoch)
+
+    my_logger.info("Best Model Metrics:")
+    for name, value in final_metrics.items():
+        my_logger.info(f"  {name} = {value}")
+
+    if best_model_path:
+        my_logger.info(f"Best model file: {best_model_path}")
+        my_logger.info(f"Best CM file   : {best_cm_path}")
 
 
 def main():
     parser = argparse.ArgumentParser(description="Train MAE binary model")
     parser.add_argument("--train_dir", type=str, required=True, help="Training data directory")
-    parser.add_argument("--val_dir", type=str, required=True, help="Validation data directory")
+    parser.add_argument("--val_dir",   type=str, required=True, help="Validation data directory")
     parser.add_argument("--num_epochs", type=int, default=20, help="Epochs")
     parser.add_argument("--batch_size", type=int, default=16, help="Batch size")
     parser.add_argument("--learning_rate", type=float, default=0.0005, help="Learning rate")
@@ -206,21 +231,24 @@ def main():
     my_logger.info(f"Args: {args}")
 
     load_dotenv()
-    account = os.getenv("AZURE_STORAGE_ACCOUNT")
-    key = os.getenv("AZURE_STORAGE_KEY")
+    account   = os.getenv("AZURE_STORAGE_ACCOUNT")
+    key       = os.getenv("AZURE_STORAGE_KEY")
     container = os.getenv("BLOB_CONTAINER")
-    my_logger.info("Downloading training and validation data.")
+    my_logger.info("Downloading training and validation data...")
     download_from_blob(account, key, container, args.train_dir)
     download_from_blob(account, key, container, args.val_dir)
 
     mlflow.start_run()
     my_logger.info("Loading datasets...")
-    train_dataset = Dataset2DBinary(args.train_dir)
-    val_seq_dataset = DatasetSequence2DBinary(dataset_folder=args.val_dir, sequence_length=args.sequence_length)
+    train_dataset   = Dataset2DBinary(args.train_dir)
+    val_seq_dataset = DatasetSequence2DBinary(dataset_folder=args.val_dir,
+                                              sequence_length=args.sequence_length)
 
-    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
+    train_loader   = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
     val_seq_loader = DataLoader(val_seq_dataset, batch_size=args.batch_size, shuffle=False)
-    my_logger.info(f"Loaded {len(train_dataset)} train samples and {len(val_seq_dataset)} validation sequences.")
+    my_logger.info(
+        f"Loaded {len(train_dataset)} train samples and {len(val_seq_dataset)} validation sequences."
+    )
 
     train_model(
         train_loader,
@@ -232,6 +260,7 @@ def main():
 
     mlflow.end_run()
     my_logger.info("MLflow run ended")
+
 
 if __name__ == "__main__":
     main()

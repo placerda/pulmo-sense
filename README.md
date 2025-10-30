@@ -68,9 +68,9 @@ CT slices are resized and divided into fixed-size patches (e.g., 16×16). Each p
 |--------|-------------|
 | `datasets/` | Dataset classes and statistics scripts |
 | `environment/` | Configuration files (e.g., Docker) |
-| `cloud_run/` | Python programs to start cloud experiments |
+| `cloud_jobs/` | Python programs to start cloud experiments |
+| `notebooks/` | Notebooks for demonstration |
 | `scripts/` | Training scripts organized by model architecture |
-| `local_run/` | Cloud scripts to run training, test  and evaluation locally |
 | `utils/` | Utility scripts (logging, downloading, checks) |
 | `README.md` | Project documentation |
 | `DATASET.md` | Dataset details and usage instructions |
@@ -103,13 +103,10 @@ Ensure datasets are placed in the expected folder structure before executing tra
 
 | Model                                      | Accuracy (%) | AUC   | F1 Score | Precision | Recall |
 |-------------------------------------------|--------------|-------|----------|-----------|--------|
-| **VGG**                                    | **99.08**    | 0.999 | 0.990    | 0.990     | 0.991  |
+| VGG                                    | **99.08**    | 0.999 | 0.990    | 0.990     | 0.991  |
 | Attention-based LSTM with VGG features     | 95.19        | 0.993 | 0.951    | 0.949     | 0.954  |
-| Attention-based LSTM with 2D CNN features  | 94.67        | 0.994 | 0.946    | 0.946     | 0.946  |
 | LSTM with VGG features                     | 94.15        | 0.993 | 0.941    | 0.939     | 0.945  |
-| LSTM with 2D CNN features                  | 94.02        | 0.992 | 0.939    | 0.939     | 0.939  |
 | ViT                                        | 93.74        | 0.992 | 0.936    | 0.937     | 0.937  |
-| 2D CNN                                     | 92.44        | 0.987 | 0.922    | 0.923     | 0.923  |
 | 3D CNN-LSTM                                | 40.96        | 0.500 | 0.194    | 0.137     | 0.333  |
 
 ---

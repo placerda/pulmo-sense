@@ -11,7 +11,7 @@ The script processes a list of study folders (paths) provided in a file, handles
 saves the results into three output files under the `temp/` folder.
 
 Key points:
-- Pixel intensities are assumed to be in the 0–255 grayscale range.
+- Pixel intensities are assumed to be in the 0-255 grayscale range.
 - Only '.png', '.jpg', and '.jpeg' files are considered valid slices.
 - Errors while loading images are logged separately without interrupting the execution.
 
